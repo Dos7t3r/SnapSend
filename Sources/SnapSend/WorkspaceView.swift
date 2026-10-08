@@ -10,12 +10,16 @@ enum WorkspacePage: String, CaseIterable {
 struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
     @State var page: WorkspacePage = .overview
+    @State private var showingHistory = false
     @State private var courseName = ""
     @State private var preview: UUID?
     @State private var targetPicker = false
     @State private var deletingPhoto = false
     @Namespace private var navigation
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.auroraReduceMotion) private var reduceMotion
+    init(model: WorkspaceModel, page: WorkspacePage = .overview, history: Bool = false) {
+        self.model = model; _page = State(initialValue: page); _showingHistory = State(initialValue: history)
+    }
     var body: some View {
         ZStack {
             AuroraBackground()
@@ -25,17 +29,21 @@ struct WorkspaceView: View {
                     if let banner = model.alertBanner { bannerView(banner) }
                     Group {
                         switch page {
-                        case .overview: OverviewScreen(model: model, configure: { page = .settings }, changeTarget: { targetPicker = true }, openPhoto: openPhoto)
+                        case .overview:
+                            if showingHistory { HistoryScreen(model: model, openPhoto: openPhoto, back: { showingHistory = false }) }
+                            else { OverviewScreen(model: model, configure: { page = .settings }, changeTarget: { targetPicker = true }, openPhoto: openPhoto, showHistory: { showingHistory = true }) }
                         case .courses: CoursesScreen(model: model, openPhoto: openPhoto)
                         case .inbox: InboxScreen(model: model, openPhoto: openPhoto)
                         case .settings: SettingsScreen(model: model)
                         }
-                    }.transition(.opacity)
-                }.padding(.vertical, Aurora.Space.page).padding(.trailing, Aurora.Space.page).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }.id(page.rawValue + String(showingHistory)).transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: Aurora.Motion.pageIn)), removal: .opacity.combined(with: .offset(y: Aurora.Motion.pageOut))))
+                }.padding(.vertical, Aurora.Space.page).frame(maxWidth: .infinity, maxHeight: .infinity)
             }.auroraGlassGroup()
         }.foregroundStyle(Aurora.Colors.primary).font(Aurora.TypeStyle.body).tint(Aurora.Colors.blue)
             .environment(\.locale, Locale(identifier: "zh_CN")).preferredColorScheme(.dark)
-            .animation(reduceMotion ? nil : Aurora.Motion.page, value: page)
+            .animation(reduceMotion ? Aurora.Motion.fade : Aurora.Motion.page, value: page)
+            .animation(reduceMotion ? Aurora.Motion.fade : Aurora.Motion.page, value: showingHistory)
+            .buttonStyle(PressableStyle(inset: Aurora.Space.tiny))
             .sheet(isPresented: $targetPicker) { targetSheet }
             .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { preview = nil } })) { photoPreview }
             .alert("新建课程", isPresented: $model.showingNewCourseAlert) {
@@ -44,35 +52,36 @@ struct WorkspaceView: View {
     }
     private func openPhoto(_ photo: PhotoRecord) { model.selected = photo.id; preview = photo.id }
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: Aurora.Space.gap) {
+        ScrollView { VStack(alignment: .leading, spacing: Aurora.Space.gap) {
             HStack(spacing: Aurora.Space.inset) { SnapMark(size: Aurora.Space.icon); Text("SnapSend").font(Aurora.TypeStyle.heading) }.padding(.top, Aurora.Space.page)
             VStack(spacing: Aurora.Space.small) {
                 ForEach(WorkspacePage.allCases, id: \.self) { item in
-                    Button { page = item } label: {
+                    Button { showingHistory = false; page = item } label: {
                         HStack(spacing: Aurora.Space.inset) {
-                            Image(systemName: item.symbol).font(Aurora.TypeStyle.heading).foregroundStyle(page == item ? Aurora.Colors.primary : item.color).frame(width: Aurora.Space.page, height: Aurora.Space.page).background(item.color.opacity(page == item ? Aurora.Alpha.active : Aurora.Alpha.icon), in: RoundedRectangle(cornerRadius: Aurora.Space.iconRadius))
+                            Image(systemName: item.symbol).font(Aurora.TypeStyle.heading).foregroundStyle(page == item ? Aurora.Colors.primary : item.color).selectionBounce(page == item).frame(width: Aurora.Space.page, height: Aurora.Space.page).background(item.color.opacity(page == item ? Aurora.Alpha.active : Aurora.Alpha.icon), in: RoundedRectangle(cornerRadius: Aurora.Space.iconRadius))
                             Text(item.rawValue).font(Aurora.TypeStyle.body.weight(.semibold)); Spacer()
-                            if item == .inbox, !model.pendingPhotos.isEmpty { Text("\(model.pendingPhotos.count)").font(Aurora.TypeStyle.micro).monospacedDigit() }
+                            if item == .inbox, !model.pendingPhotos.isEmpty { Text("\(model.pendingPhotos.count)").font(Aurora.TypeStyle.micro).monospacedDigit().contentTransition(reduceMotion ? .opacity : .numericText()).animation(reduceMotion ? Aurora.Motion.fade : Aurora.Motion.state, value: model.pendingPhotos.count) }
                         }.padding(.horizontal, Aurora.Space.inset).frame(height: Aurora.Space.nav)
-                            .background { if page == item { RoundedRectangle(cornerRadius: Aurora.Space.rowRadius).fill(Aurora.Colors.selected).matchedGeometryEffect(id: "navigation", in: navigation) } }
-                    }.buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading).background { if page == item { RoundedRectangle(cornerRadius: Aurora.Space.rowRadius).fill(Aurora.Colors.selected).matchedGeometryEffect(id: "navigation", in: navigation).allowsHitTesting(false) } }
+                    }.buttonStyle(PressableStyle(row: true))
                 }
             }
-            Spacer()
+        }.padding(Aurora.Space.card) }.scrollIndicators(.automatic)
+        .safeAreaInset(edge: .bottom, spacing: 0) { VStack(alignment: .leading, spacing: Aurora.Space.small) {
             Text("照片先保存，再发送").font(Aurora.TypeStyle.micro).foregroundStyle(Aurora.Colors.tertiary)
             Button { page = .settings } label: {
                 HStack(spacing: Aurora.Space.small) {
-                    Circle().fill(model.usbConnected ? Aurora.Colors.success : Aurora.Colors.phone).frame(width: Aurora.Space.small, height: Aurora.Space.small)
+                    Circle().fill(model.usbConnected ? Aurora.Colors.success : Aurora.Colors.queued).frame(width: Aurora.Space.small, height: Aurora.Space.small)
                     VStack(alignment: .leading, spacing: Aurora.Space.tiny) { Text(model.usbConnected ? "iPhone · USB 已连接" : "iPhone · 等待连接").font(Aurora.TypeStyle.caption); Text("连接与配对").font(Aurora.TypeStyle.micro).foregroundStyle(Aurora.Colors.secondary) }
                 }.padding(Aurora.Space.inset).frame(maxWidth: .infinity, alignment: .leading).background(Aurora.Colors.white.opacity(Aurora.Alpha.hover), in: Capsule())
-            }.buttonStyle(.plain)
-        }.padding(Aurora.Space.card).glassCard(cornerRadius: Aurora.Space.sidebarRadius)
+            }.buttonStyle(PressableStyle(radius: 40, row: true))
+        }.padding(Aurora.Space.card) }.glassCard(cornerRadius: Aurora.Space.sidebarRadius)
     }
     private var targetSheet: some View {
         VStack(alignment: .leading, spacing: Aurora.Space.gap) {
             Text("选择发送目标").font(Aurora.TypeStyle.heading)
             Text("课表中的当前 Section 优先；没有课表时使用手动选择。").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary)
-            ScrollView { VStack(alignment: .leading, spacing: Aurora.Space.small) { Button("收件箱 · 只保存，不发送") { model.chooseSection(nil); targetPicker = false }.auroraButton(); ForEach((model.catalog.sections ?? []).filter { section in model.catalog.courses.contains { $0.id == section.courseID && $0.archived != true } }) { section in Button { model.chooseSection(section.id); targetPicker = false } label: { Text("\(model.catalog.courses.first { $0.id == section.courseID }?.name ?? "") → \(section.name)").frame(maxWidth: .infinity, alignment: .leading).padding(Aurora.Space.inset) }.buttonStyle(.plain).background(Aurora.Colors.white.opacity(Aurora.Alpha.faint), in: RoundedRectangle(cornerRadius: Aurora.Space.rowRadius)) } } }
+            ScrollView { VStack(alignment: .leading, spacing: Aurora.Space.small) { Button("收件箱 · 只保存，不发送") { model.chooseSection(nil); targetPicker = false }.auroraButton(); ForEach((model.catalog.sections ?? []).filter { section in model.catalog.courses.contains { $0.id == section.courseID && $0.archived != true } }) { section in Button { model.chooseSection(section.id); targetPicker = false } label: { Text("\(model.catalog.courses.first { $0.id == section.courseID }?.name ?? "") → \(section.name)").frame(maxWidth: .infinity, alignment: .leading).padding(Aurora.Space.inset) }.buttonStyle(PressableStyle(row: true)).background(Aurora.Colors.white.opacity(Aurora.Alpha.faint), in: RoundedRectangle(cornerRadius: Aurora.Space.rowRadius)) } } }
             HStack { Button("管理课程与 Section") { targetPicker = false; page = .courses }.auroraButton(); Spacer(); Button("完成") { targetPicker = false }.auroraButton() }
         }.padding(Aurora.Space.page).frame(width: Aurora.Space.editor, height: Aurora.Space.editor).preferredColorScheme(.dark)
     }
@@ -94,7 +103,7 @@ struct WorkspaceView: View {
     }
     private func navigate(_ delta: Int) { guard let i = model.records.firstIndex(where: { $0.id == preview }), model.records.indices.contains(i + delta) else { return }; preview = model.records[i + delta].id; model.selected = preview }
     private func bannerView(_ banner: AppAlertBanner) -> some View {
-        HStack(spacing: Aurora.Space.inset) { Image(systemName: banner.style.icon).foregroundStyle(banner.style.color); VStack(alignment: .leading, spacing: Aurora.Space.tiny) { Text(banner.title).font(Aurora.TypeStyle.caption.weight(.semibold)); Text(banner.message).font(Aurora.TypeStyle.micro).foregroundStyle(Aurora.Colors.secondary).lineLimit(2) }; Spacer(); if let action = banner.actionTitle { Button(action) { model.performBannerAction() }.buttonStyle(.borderless) }; Button { model.dismissAlert() } label: { Image(systemName: "xmark") }.buttonStyle(.plain) }.padding(Aurora.Space.inset).background(Aurora.Colors.white.opacity(Aurora.Alpha.hover), in: RoundedRectangle(cornerRadius: Aurora.Space.rowRadius))
+        HStack(spacing: Aurora.Space.inset) { Image(systemName: banner.style.icon).foregroundStyle(banner.style.color); VStack(alignment: .leading, spacing: Aurora.Space.tiny) { Text(banner.title).font(Aurora.TypeStyle.caption.weight(.semibold)); Text(banner.message).font(Aurora.TypeStyle.micro).foregroundStyle(Aurora.Colors.secondary).lineLimit(2) }; Spacer(); if let action = banner.actionTitle { Button(action) { model.performBannerAction() }.buttonStyle(PressableStyle(inset: Aurora.Space.tiny)) }; Button { model.dismissAlert() } label: { Image(systemName: "xmark").frame(width: 28, height: 28) }.buttonStyle(PressableStyle(row: true)) }.padding(Aurora.Space.inset).background(Aurora.Colors.white.opacity(Aurora.Alpha.hover), in: RoundedRectangle(cornerRadius: Aurora.Space.rowRadius))
     }
 }
 private struct PreviewImage: View {

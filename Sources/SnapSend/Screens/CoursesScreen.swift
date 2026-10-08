@@ -12,7 +12,7 @@ struct CoursesScreen: View {
     private var visibleCourses: [Course] { model.catalog.courses.filter { ($0.archived == true) == archived && $0.id != model.catalog.context(for: model.catalog.inboxLessonID)?.lesson.courseID } }
     var body: some View {
         VStack(alignment: .leading, spacing: Aurora.Space.gap) {
-            HStack { Text("课程").font(Aurora.TypeStyle.title); Spacer(); Toggle("回收站", isOn: $archived).toggleStyle(.button).onChange(of: archived) { _, _ in selectedCourse = nil }.font(Aurora.TypeStyle.caption); Button("新建课程", systemImage: "plus") { name = ""; model.showingNewCourseAlert = true }.auroraButton(primary: true) }
+            HStack { Text("课程").font(Aurora.TypeStyle.title).lineLimit(1); Spacer(); Toggle("回收站", isOn: $archived).toggleStyle(.button).onChange(of: archived) { _, _ in selectedCourse = nil }.font(Aurora.TypeStyle.caption); Button("新建课程", systemImage: "plus") { name = ""; model.showingNewCourseAlert = true }.auroraButton(primary: true) }
             Text("课程 → 固定 Section → 按日期归档。每个 Section 只需绑定一次聊天。").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Aurora.Space.gap) {
@@ -22,10 +22,10 @@ struct CoursesScreen: View {
                                 Button { selectedCourse = course.id } label: {
                                     VStack(alignment: .leading, spacing: Aurora.Space.gap) {
                                         Image(systemName: "folder.fill").font(Aurora.TypeStyle.number).foregroundStyle(Aurora.courseColor(model.catalog.courses.firstIndex { $0.id == course.id } ?? 0))
-                                        Text(course.name).font(Aurora.TypeStyle.heading)
+                                        Text(course.name).font(Aurora.TypeStyle.heading).lineLimit(1)
                                         Text("\(model.catalog.sections?.filter { $0.courseID == course.id }.count ?? 0) 个 Section · \(model.records.filter { model.catalog.context(for: $0.sessionID)?.lesson.courseID == course.id }.count) 张照片").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary)
-                                    }.padding(Aurora.Space.card).frame(maxWidth: .infinity, alignment: .leading).glassCard()
-                                }.buttonStyle(.plain)
+                                    }.padding(Aurora.Space.card).frame(maxWidth: .infinity, alignment: .leading).glassCard().cardEntrance(model.catalog.courses.firstIndex { $0.id == course.id } ?? 0)
+                                }.buttonStyle(PressableStyle(row: true))
                             }
                         }
                     } else {
@@ -34,8 +34,8 @@ struct CoursesScreen: View {
                     ForEach(model.catalog.courses.filter { ($0.archived == true) == archived && $0.id == selectedCourse }) { course in
                         VStack(alignment: .leading, spacing: Aurora.Space.gap) {
                             HStack(spacing: Aurora.Space.inset) {
-                                Image(systemName: "folder.fill").foregroundStyle(Aurora.courseColor(model.catalog.courses.firstIndex { $0.id == course.id } ?? 0)).font(Aurora.TypeStyle.heading)
-                                Button { selectedCourse = selectedCourse == course.id ? nil : course.id } label: { VStack(alignment: .leading, spacing: Aurora.Space.tiny) { Text(course.name).font(Aurora.TypeStyle.heading); Text("\(model.catalog.sections?.filter { $0.courseID == course.id }.count ?? 0) 个 Section · \(model.records.filter { model.catalog.context(for: $0.sessionID)?.lesson.courseID == course.id }.count) 张照片").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary) } }.buttonStyle(.plain)
+                                Image(systemName: "folder.fill").foregroundStyle(Aurora.courseColor(model.catalog.courses.firstIndex { $0.id == course.id } ?? 0)).font(Aurora.TypeStyle.heading).lineLimit(1)
+                                Button { selectedCourse = selectedCourse == course.id ? nil : course.id } label: { VStack(alignment: .leading, spacing: Aurora.Space.tiny) { Text(course.name).font(Aurora.TypeStyle.heading).lineLimit(1); Text("\(model.catalog.sections?.filter { $0.courseID == course.id }.count ?? 0) 个 Section · \(model.records.filter { model.catalog.context(for: $0.sessionID)?.lesson.courseID == course.id }.count) 张照片").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary) } }.buttonStyle(PressableStyle(row: true))
                                 Spacer()
                                 Menu {
                                     if archived { Button("恢复课程") { model.archiveCourse(course.id, archived: false) } }
@@ -45,7 +45,7 @@ struct CoursesScreen: View {
                                         Button("导出全部原图") { model.exportCourse(course.id) }
                                         Button("移入回收站") { model.archiveCourse(course.id, archived: true) }
                                     }
-                                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
+                                } label: { Image(systemName: "ellipsis").menuHitArea() }.menuStyle(.borderlessButton).fixedSize().handPointer()
                             }
                             if !archived {
                                 ForEach((model.catalog.sections ?? []).filter { $0.courseID == course.id }) { section in
@@ -54,17 +54,17 @@ struct CoursesScreen: View {
                                         ForEach(model.catalog.lessons.filter { $0.sectionID == section.id }.reversed()) { lesson in
                                             DisclosureGroup {
                                                 ForEach(model.records.filter { $0.sessionID == lesson.id }) { photo in PhotoRow(model: model, photo: photo) { openPhoto(photo) } }
-                                                Button("导出这一天的照片") { model.exportLesson(lesson.id) }.buttonStyle(.borderless)
+                                                Button("导出这一天的照片") { model.exportLesson(lesson.id) }.buttonStyle(PressableStyle(inset: Aurora.Space.tiny))
                                             } label: { Label(lesson.startedAt.formatted(date: .abbreviated, time: .shortened) + (lesson.title.isEmpty ? "" : " · " + lesson.title), systemImage: "calendar").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary) }.padding(.leading, Aurora.Space.page)
                                         }
                                     }
                                 }
                             }
-                        }.padding(Aurora.Space.card).glassCard()
+                        }.padding(Aurora.Space.card).glassCard().cardEntrance(model.catalog.courses.firstIndex { $0.id == course.id } ?? 0)
                     }
                     if model.catalog.courses.isEmpty { EmptyPhotos() }
-                }
-            }
+                }.padding(.trailing, Aurora.Space.page).padding(.bottom, Aurora.Space.page)
+            }.scrollIndicators(.automatic).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .alert("课程名称", isPresented: Binding(get: { courseEditor != nil }, set: { if !$0 { courseEditor = nil } })) {
             TextField("课程名称", text: $name); Button("取消", role: .cancel) { courseEditor = nil }; Button("保存") { if let id = courseEditor { model.renameCourseID(id, name: name) }; courseEditor = nil }
@@ -84,7 +84,7 @@ struct SectionEditor: View {
     private var valid: Bool { !section.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (!scheduled || start < end) && (url.isEmpty || ChatURL.isConversation(url)) }
     var body: some View {
         VStack(alignment: .leading, spacing: Aurora.Space.gap) {
-            Text("编辑 Section").font(Aurora.TypeStyle.heading)
+            Text("编辑 Section").font(Aurora.TypeStyle.heading).lineLimit(1)
             TextField("名称，例如 LEC0101", text: $section.name).textFieldStyle(.roundedBorder)
             TextField("ChatGPT 对话链接（可稍后绑定）", text: $url).textFieldStyle(.roundedBorder)
             Text("支持普通聊天和项目内聊天。保存链接后，在对应页面打开扩展即可重新连接。").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary)

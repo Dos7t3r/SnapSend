@@ -17,7 +17,7 @@ enum Aurora {
         static let mesh = [Color(hex: 0x0A1230), Color(hex: 0x1B1250), Color(hex: 0x0B3A4A), Color(hex: 0x2A1060)]
     }
     enum Alpha {
-        static let faint = 0.04, hover = 0.05, icon = 0.12, active = 0.24, strong = 0.16, label = 0.06
+        static let faint = 0.04, hover = 0.06, icon = 0.12, active = 0.24, strong = 0.16, label = 0.06
         static let line = 0.45, dim = 0.2, ring = 0.85, outline = 0.25
     }
     enum Space {
@@ -44,9 +44,19 @@ enum Aurora {
         static let micro = Font.system(size: 11, weight: .medium)
     }
     enum Motion {
-        static let state = Animation.spring(duration: 0.45, bounce: 0.25)
-        static let hover = Animation.snappy(duration: 0.25)
-        static let page = Animation.smooth(duration: 0.6)
+        static let state = Animation.spring(response: 0.38, dampingFraction: 0.78)
+        static let hover = Animation.easeInOut(duration: 0.2)
+        static let highlight = Animation.easeInOut(duration: 0.15)
+        static let fade = Animation.easeInOut(duration: 0.2)
+        static let grow = Animation.easeInOut(duration: 0.6)
+        static let flow = Animation.linear(duration: 1)
+        static let stagger = 0.04, maximumDelay = 0.3
+        static let rowScale: CGFloat = 0.98, buttonScale: CGFloat = 0.96
+        static let iconScale: CGFloat = 1.08
+        static let iconBounce = Animation.easeInOut(duration: 0.16)
+        static let pageOut: CGFloat = -6, pageIn: CGFloat = 10
+        static let rowIn: CGFloat = -10, insertionScale: CGFloat = 0.96
+        static let page = state
         static let pressedScale: CGFloat = 0.97
         static let period: Double = 20, drift: Float = 0.04, frameInterval: Double = 1
         static let flash: Double = 0.6, arrivalScale: CGFloat = 1.15
@@ -58,7 +68,7 @@ private extension Color {
 }
 
 struct AuroraBackground: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.auroraReduceMotion) private var reduceMotion
     @Environment(\.controlActiveState) private var active
     @State private var appActive = false
     var body: some View {
@@ -90,18 +100,19 @@ struct GlassCard: ViewModifier {
     var radius: CGFloat = Aurora.Space.radius
     var tint: Color? = nil
     @State private var hover = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.auroraReduceMotion) private var reduceMotion
     @ViewBuilder private func surface<V: View>(_ content: V) -> some View {
         if #available(macOS 26, *) {
             content.glassEffect(tint.map { .regular.tint($0.opacity(0.12)) } ?? .regular, in: .rect(cornerRadius: radius))
         } else {
             content.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: radius))
-                .overlay(RoundedRectangle(cornerRadius: radius).stroke(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: Aurora.Space.hairline))
+                .overlay(RoundedRectangle(cornerRadius: radius).stroke(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: Aurora.Space.hairline).allowsHitTesting(false))
         }
     }
     func body(content: Content) -> some View {
-        surface(content.background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: radius))).overlay(RoundedRectangle(cornerRadius: radius).stroke(.white.opacity(hover ? 0.18 : 0.08), lineWidth: Aurora.Space.hairline))
-            .offset(y: hover && !reduceMotion ? -Aurora.Space.hover : 0).onHover { hover = $0 }.animation(reduceMotion ? nil : Aurora.Motion.hover, value: hover)
+        surface(content.background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: radius))).overlay(RoundedRectangle(cornerRadius: radius).stroke(.white.opacity(hover ? 0.18 : 0.08), lineWidth: Aurora.Space.hairline).allowsHitTesting(false))
+            .shadow(color: .black.opacity(hover ? 0.18 : 0.10), radius: hover ? 14 : 10, y: 4)
+            .offset(y: hover && !reduceMotion ? -Aurora.Space.hover : 0).onHover { hover = $0 }.animation(Aurora.Motion.hover, value: hover)
     }
 }
 extension View {
@@ -109,16 +120,24 @@ extension View {
     @ViewBuilder func auroraGlassGroup() -> some View {
         if #available(macOS 26, *) { GlassEffectContainer(spacing: Aurora.Space.small) { self } } else { self }
     }
-    @ViewBuilder func auroraButton(primary: Bool = false) -> some View {
-        if #available(macOS 26, *) { if primary { self.buttonStyle(.glassProminent) } else { self.buttonStyle(.glass) } }
-        else { if primary { self.buttonStyle(.borderedProminent) } else { self.buttonStyle(.bordered) } }
+    func auroraButton(primary: Bool = false) -> some View {
+        buttonStyle(PressableStyle(radius: Aurora.Space.iconRadius, inset: Aurora.Space.small, filled: primary))
+    }
+
+}
+
+struct AuroraInlineButton: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressableStyle(radius: Aurora.Space.iconRadius, inset: Aurora.Space.small).makeBody(configuration: configuration)
     }
 }
 
-struct AuroraInlineButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.padding(.horizontal, Aurora.Space.inset).padding(.vertical, Aurora.Space.small)
-            .background(Aurora.Colors.blue.opacity(configuration.isPressed ? 0.24 : 0.12), in: RoundedRectangle(cornerRadius: Aurora.Space.iconRadius))
-            .scaleEffect(configuration.isPressed ? Aurora.Motion.pressedScale : 1).animation(Aurora.Motion.hover, value: configuration.isPressed)
+// Preserve the system setting; the additional environment value allows isolated
+// previews to verify the reduced-motion path without changing macOS preferences.
+private struct AuroraMotionOverride: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var auroraReduceMotion: Bool {
+        get { accessibilityReduceMotion || self[AuroraMotionOverride.self] }
+        set { self[AuroraMotionOverride.self] = newValue }
     }
 }
