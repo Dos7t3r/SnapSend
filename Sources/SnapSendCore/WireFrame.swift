@@ -1,6 +1,6 @@
 import Foundation
 
-public let SnapSendVersion = "0.5.0"
+public let SnapSendVersion = "0.5.1"
 
 /// 4-byte big-endian metadata length, JSON metadata, then binary image bytes.
 public struct WireHeader: Codable, Sendable {

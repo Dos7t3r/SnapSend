@@ -1,8 +1,8 @@
 # Chrome 插件：单独下载
 
-**[下载 v0.5.0 预览版 SnapSend-Chrome-Extension.zip](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.0/SnapSend-Chrome-Extension.zip)**
+**[下载 v0.5.1 预览版 SnapSend-Chrome-Extension.zip](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.1/SnapSend-Chrome-Extension.zip)**
 
-[各版本下载](https://github.com/Dos7t3r/SnapSend/releases) · [Mac App](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.0/SnapSend-Mac-arm64.zip)
+[各版本下载](https://github.com/Dos7t3r/SnapSend/releases) · [Mac App](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.1/SnapSend-Mac-arm64.zip)
 
 1. 下载 ZIP，解压，保留 `SnapSend-Chrome-Extension` 文件夹。
 2. Mac SnapSend 的 AI 设置安装浏览器桥接。
