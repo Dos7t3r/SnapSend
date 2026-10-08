@@ -11,6 +11,8 @@ final class CameraCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDele
     @Published private(set) var state: State = .preparing
     #endif
     @Published private(set) var zoom: CGFloat = 1
+    @Published private(set) var zoomPresets: [CGFloat] = [1]
+    private var wideFactor: CGFloat = 1
     @Published private(set) var pending = 0
     @Published private(set) var captureReady = false
     private var readiness: NSKeyValueObservation?
@@ -39,6 +41,9 @@ final class CameraCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDele
         })
         #endif
     }
+    #if DEBUG || targetEnvironment(simulator)
+    func configurePreview(presets: [CGFloat]) { zoomPresets = presets }
+    #endif
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     private func publish(_ state: State) { DispatchQueue.main.async { self.state = state } }
     func setActive(_ active: Bool) {
@@ -68,13 +73,21 @@ final class CameraCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDele
         guard desired else { return }
         do {
             if !configured {
-                guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { publish(.unavailable); return }
+                let types: [AVCaptureDevice.DeviceType] = [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera]
+                guard let camera = types.compactMap({ AVCaptureDevice.default($0, for: .video, position: .back) }).first else { publish(.unavailable); return }
+                if let wideIndex = camera.constituentDevices.firstIndex(where: { $0.deviceType == .builtInWideAngleCamera }), wideIndex > 0 {
+                    wideFactor = camera.virtualDeviceSwitchOverVideoZoomFactors[wideIndex - 1].doubleValue
+                }
+                let minZoom = camera.minAvailableVideoZoomFactor / wideFactor
+                let maxZoom = min(camera.maxAvailableVideoZoomFactor / wideFactor, 5)
+                let presets: [CGFloat] = [0.5, 1, 2, 3].filter { $0 >= minZoom && $0 <= maxZoom }
+                DispatchQueue.main.async { self.zoomPresets = presets }
                 let input = try AVCaptureDeviceInput(device: camera)
                 session.beginConfiguration()
                 guard session.canAddInput(input), session.canAddOutput(output) else { session.commitConfiguration(); publish(.unavailable); return }
                 session.sessionPreset = .photo; session.addInput(input); session.addOutput(output)
                 output.maxPhotoQualityPrioritization = .balanced
-                if let dimension = camera.activeFormat.supportedMaxPhotoDimensions.filter({ Int64($0.width) * Int64($0.height) <= 12_500_000 }).max(by: { Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height) }) { output.maxPhotoDimensions = dimension }
+                if let dimension = camera.activeFormat.supportedMaxPhotoDimensions.filter({ Int64($0.width) * Int64($0.height) <= 12_500_000 && abs(Double($0.width) / Double($0.height) - 4.0 / 3.0) < 0.01 }).max(by: { Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height) }) { output.maxPhotoDimensions = dimension }
                 if output.isResponsiveCaptureSupported { output.isResponsiveCaptureEnabled = true }
                 session.commitConfiguration(); device = camera; configured = true
                 try camera.lockForConfiguration()
@@ -82,7 +95,7 @@ final class CameraCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDele
                 if camera.isExposureModeSupported(.continuousAutoExposure) { camera.exposureMode = .continuousAutoExposure }
                 camera.isSubjectAreaChangeMonitoringEnabled = true; camera.unlockForConfiguration()
             }
-            if !session.isRunning { session.startRunning() }
+            if !session.isRunning { applyZoom(1); session.startRunning() }
             publish(.ready)
         } catch { publish(.failed(error.localizedDescription)) }
     }
@@ -127,14 +140,14 @@ final class CameraCapture: NSObject, ObservableObject, AVCapturePhotoCaptureDele
             } catch { self.publish(.failed(error.localizedDescription)) }
         }
     }
-    func setZoom(_ value: CGFloat) {
-        queue.async {
-            guard let device = self.device else { return }
-            let zoom = min(max(value, device.minAvailableVideoZoomFactor), min(device.maxAvailableVideoZoomFactor, 5))
-            do { try device.lockForConfiguration(); device.videoZoomFactor = zoom; device.unlockForConfiguration(); DispatchQueue.main.async { self.zoom = zoom } }
-            catch { self.publish(.failed(error.localizedDescription)) }
-        }
+    func setZoom(_ value: CGFloat) { queue.async { self.applyZoom(value) } }
+    private func applyZoom(_ value: CGFloat) {
+        guard let device else { return }
+        let factor = min(max(value * wideFactor, device.minAvailableVideoZoomFactor), min(device.maxAvailableVideoZoomFactor, 5 * wideFactor))
+        do { try device.lockForConfiguration(); device.videoZoomFactor = factor; device.unlockForConfiguration(); DispatchQueue.main.async { self.zoom = factor / self.wideFactor } }
+        catch { publish(.failed(error.localizedDescription)) }
     }
+
 }
 
 struct CameraPreview: UIViewRepresentable {
@@ -162,7 +175,7 @@ struct CameraPreview: UIViewRepresentable {
         private var baseZoom: CGFloat = 1
         private var captureInteraction: UIInteraction?
         override init(frame: CGRect) {
-            super.init(frame: frame); layerView.videoGravity = .resizeAspectFill
+            super.init(frame: frame); layerView.videoGravity = .resizeAspect
             addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
             addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
         }
