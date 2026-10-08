@@ -17,7 +17,9 @@ public struct Lesson: Codable, Identifiable, Sendable, Equatable {
 public struct LessonContext: Codable, Sendable, Equatable {
     public let lesson: Lesson
     public let courseName: String
-    public init(lesson: Lesson, courseName: String) { self.lesson = lesson; self.courseName = courseName }
+    public var sectionName: String? = nil
+    public var displayName: String { sectionName.map { courseName + " · " + $0 } ?? courseName }
+    public init(lesson: Lesson, courseName: String, sectionName: String? = nil) { self.lesson = lesson; self.courseName = courseName; self.sectionName = sectionName }
 }
 public struct CourseCatalog: Codable, Sendable {
     public var courses: [Course] = []
@@ -31,7 +33,7 @@ public struct CourseCatalog: Codable, Sendable {
     public func context(for id: UUID?) -> LessonContext? {
         guard let id, let lesson = lessons.first(where: { $0.id == id }),
               let course = courses.first(where: { $0.id == lesson.courseID }) else { return nil }
-        return LessonContext(lesson: lesson, courseName: course.name)
+        return LessonContext(lesson: lesson, courseName: course.name, sectionName: section(for: id)?.name)
     }
 }
 

@@ -67,4 +67,28 @@ final class SectionRoutingTests: XCTestCase {
         XCTAssertThrowsError(try store.updateSection(section))
         XCTAssertNil(store.catalog.section(for: lesson.id)?.schedule)
     }
+    func testSectionContextIsBackwardCompatibleAndShowsTargetName() throws {
+        let dir = directory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try PhotoStore(directory: dir), lesson = try store.createCourse(name: "STA256")
+        var section = try XCTUnwrap(store.catalog.section(for: lesson.id)); section.name = "LEC0101"
+        try store.updateSection(section)
+        let context = try XCTUnwrap(store.catalog.context(for: lesson.id))
+        XCTAssertEqual(context.displayName, "STA256 · LEC0101")
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(context)) as? [String: Any])
+        legacy.removeValue(forKey: "sectionName")
+        let decoded = try JSONDecoder().decode(LessonContext.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(decoded.sectionName); XCTAssertEqual(decoded.courseName, "STA256")
+    }
+    func testPhoneContextRenameKeepsOtherSectionNames() throws {
+        let dir = directory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let library = try PhoneLibrary(directory: dir), course = UUID()
+        let a = Lesson(id: UUID(), courseID: course, title: "", startedAt: Date(), timeZoneID: "UTC", sectionID: UUID())
+        let b = Lesson(id: UUID(), courseID: course, title: "", startedAt: Date(), timeZoneID: "UTC", sectionID: UUID())
+        let idA = try library.save(Data([1]), context: LessonContext(lesson: a, courseName: "Old", sectionName: "LEC"))
+        let idB = try library.save(Data([2]), context: LessonContext(lesson: b, courseName: "Old", sectionName: "TUT"))
+        try library.updateCourseName(from: LessonContext(lesson: a, courseName: "New", sectionName: "LEC0101"))
+        XCTAssertEqual(library.photos.first { $0.id == idA }?.context?.displayName, "New · LEC0101")
+        XCTAssertEqual(library.photos.first { $0.id == idB }?.context?.displayName, "New · TUT")
+    }
+
 }

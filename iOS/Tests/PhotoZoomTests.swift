@@ -83,9 +83,55 @@ final class PhotoZoomTests: XCTestCase {
             host.view.layoutIfNeeded()
             XCTAssertGreaterThan(host.view.bounds.width, 300)
             XCTAssertGreaterThan(host.view.bounds.height, 700)
-            let snapshot = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
+            let snapshot = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
             XCTAssertNotNil(snapshot.cgImage)
             let attachment = XCTAttachment(image: snapshot); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+            window.isHidden = true
+        }
+    }
+
+    @MainActor func testOfflineCameraSavePersistsWithoutClassAndSurvivesReload() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let model = PhoneModel(preview: true)
+        try await model.configureTesting(directory: folder)
+        let url = try fixture(); defer { try? FileManager.default.removeItem(at: url) }
+        let image = try XCTUnwrap(UIImage(contentsOfFile: url.path))
+        model.save(image, context: nil, quality: 0.9)
+        for _ in 0..<30 where model.savingCount > 0 { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertEqual(model.photos.count, 1)
+        XCTAssertNil(model.photos.first?.context)
+        XCTAssertFalse(model.photos.first?.receivedByMac ?? true)
+        let restored = try PhoneLibrary(directory: folder)
+        XCTAssertEqual(restored.photos.first?.id, model.lastSavedID)
+        XCTAssertNotNil(UIImage(contentsOfFile: restored.photos[0].url.path))
+    }
+    @MainActor func testPhoneStateMatrix() async throws {
+        let url = try fixture(); defer { try? FileManager.default.removeItem(at: url) }
+        let course = UUID(), lesson = SnapSendPhone.Lesson(id: UUID(), courseID: course, title: "课堂", startedAt: Date(), timeZoneID: TimeZone.current.identifier)
+        let context = SnapSendPhone.LessonContext(lesson: lesson, courseName: "STA256", sectionName: "LEC0101")
+        for state in ["capture-connected", "capture-offline", "capture-no-target", "album", "album-empty", "viewer", "settings", "pairing", "light", "small", "large-text"] {
+            let model = PhoneModel(preview: true)
+            model.connected = state == "capture-connected"; model.peerName = "MacBook Pro"
+            if state != "capture-no-target" { model.activeContext = context }
+            if state != "album-empty" {
+                model.photos = [SnapSendPhone.PhonePhoto(id: UUID(), url: url, createdAt: Date(), receivedByMac: false, context: context), SnapSendPhone.PhonePhoto(id: UUID(), url: url, createdAt: Date(), receivedByMac: true, context: context, stage: "failed", stageDetail: "上传失败")]
+            }
+            if state == "pairing" { model.pairingCode = "482193"; model.pairingExpiresAt = Date().addingTimeInterval(60) }
+            let page = state == "settings" || state == "large-text" ? "settings" : ["album", "album-empty", "light", "small"].contains(state) ? "history" : "capture"
+            let root: AnyView
+            if state == "viewer", let photo = model.photos.first { root = AnyView(LessonPhotoViewer(model: model, photos: model.photos, initialID: photo.id)) }
+            else { root = AnyView(PhoneView(model: model, initialPage: page).environment(\.colorScheme, state == "light" ? .light : .dark).environment(\.dynamicTypeSize, state == "large-text" ? .accessibility2 : .large)) }
+            let host = UIHostingController(rootView: root)
+            let window = UIApplication.shared.connectedScenes.first.flatMap { $0 as? UIWindowScene }.map { UIWindow(windowScene: $0) } ?? UIWindow()
+            window.frame = CGRect(x: 0, y: 0, width: state == "small" ? 320 : 430, height: state == "small" ? 568 : 932)
+            window.rootViewController = host; window.makeKeyAndVisible()
+            window.frame = CGRect(x: 0, y: 0, width: state == "small" ? 320 : 430, height: state == "small" ? 568 : 932)
+            host.view.frame = window.bounds
+            try await Task.sleep(for: .milliseconds(700)); host.view.layoutIfNeeded()
+            XCTAssertGreaterThan(host.view.bounds.height, 500)
+            let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            let attachment = XCTAttachment(image: image); attachment.name = "Phone Aurora " + state; attachment.lifetime = .keepAlways; add(attachment)
             window.isHidden = true
         }
     }

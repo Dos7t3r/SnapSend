@@ -24,6 +24,10 @@
         B00000000000000000000015 = {isa = PBXBuildFile; fileRef = A00000000000000000000025; };
 
 /* Begin PBXBuildFile section */
+        F00000000000000000000007 = {isa = PBXBuildFile; fileRef = F00000000000000000000008; };
+        F00000000000000000000005 = {isa = PBXBuildFile; fileRef = F00000000000000000000006; };
+        F00000000000000000000003 = {isa = PBXBuildFile; fileRef = F00000000000000000000004; };
+        F00000000000000000000001 = {isa = PBXBuildFile; fileRef = F00000000000000000000002; };
         D00000000000000000000001 = {isa = PBXBuildFile; fileRef = D00000000000000000000002; };
         C00000000000000000000001 = {isa = PBXBuildFile; fileRef = C00000000000000000000002; };
         C00000000000000000000003 = {isa = PBXBuildFile; fileRef = C00000000000000000000004; };
@@ -37,6 +41,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        F00000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneComponents.swift; sourceTree = "<group>"; };
+        F00000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneWorkspace.swift; sourceTree = "<group>"; };
+        F00000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCapture.swift; sourceTree = "<group>"; };
+        F00000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneStorage.swift; sourceTree = "<group>"; };
         E00000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
         D00000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/SnapSend/ThumbnailLoader.swift; sourceTree = "<group>"; };
         C00000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/SnapSend/SnapTheme.swift; sourceTree = "<group>"; };
@@ -66,6 +74,10 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000008 /* SnapSendPhone.swift */,
+                F00000000000000000000008,
+                F00000000000000000000006,
+                F00000000000000000000004,
+                F00000000000000000000002,
                 E00000000000000000000001,
                 D00000000000000000000002,
                 C00000000000000000000002, C00000000000000000000004,
@@ -153,6 +165,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000016 /* SnapSendPhone.swift in Sources */,
+                F00000000000000000000007,
+                F00000000000000000000005,
+                F00000000000000000000003,
+                F00000000000000000000001,
                 D00000000000000000000001,
                 C00000000000000000000001,
                 A00000000000000000000028,
@@ -190,7 +206,7 @@
             baseConfigurationReference = E00000000000000000000001;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = "$(SNAPSEND_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SnapSend;
@@ -198,6 +214,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "拍摄课堂课件和板书并保存到待传队列";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+                INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				MARKETING_VERSION = 0.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.snapsend.prototype.phone;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -212,7 +229,7 @@
             baseConfigurationReference = E00000000000000000000001;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = "$(SNAPSEND_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SnapSend;
@@ -220,6 +237,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "拍摄课堂课件和板书并保存到待传队列";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+                INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				MARKETING_VERSION = 0.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.snapsend.prototype.phone;
 				PRODUCT_NAME = "$(TARGET_NAME)";

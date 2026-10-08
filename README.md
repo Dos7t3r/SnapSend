@@ -2,7 +2,7 @@
 
 **拍下课堂，留在本地，送到 AI。**
 
-> 当前开发分支正在实现 **0.6.0 Aurora 重构**：固定 Section、课表目标和收件箱。公开下载仍为 0.5.1，下面安装说明对应已发布版本。新流程和验证见 [重构记录](docs/AURORA-REBUILD.zh-CN.md)。
+> 当前开发分支正在实现 **0.6.0 Aurora 重构**：固定 Section、课表目标和收件箱。公开下载仍为 0.5.1，下面安装说明对应已发布版本。新流程和验证见 [重构记录](docs/AURORA-REBUILD.zh-CN.md)；手机内置相机、玻璃 Dock 和真机检查见 [手机升级记录](docs/PHONE-AURORA.zh-CN.md)。
 
 ![Aurora 开发版：隔离示例数据](assets/screenshots/aurora-overview.png)
 
