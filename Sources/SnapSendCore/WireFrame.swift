@@ -15,6 +15,7 @@ public struct WireHeader: Codable, Sendable {
     public var message: String?
     public var sessionID: UUID?
     public var capturedAt: Date?
+    public var sendToAI: Bool? // nil preserves compatibility with older phones
     public init(kind: String, id: UUID = UUID(), byteCount: Int = 0, sha256: String = "") {
         version = 2; self.kind = kind; self.id = id; self.byteCount = byteCount; self.sha256 = sha256
     }

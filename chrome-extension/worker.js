@@ -83,7 +83,7 @@ async function tick() {
       }
       await native({kind:"focusResult", ...bound});
     }
-    chrome.action?.setBadgeText({text:mac.review ? '!' : mac.auto ? 'ON' : 'OFF'});
+    chrome.action?.setBadgeText({text:mac.review ? '!' : mac.auto ? (mac.continuous === false ? 'SEL' : 'ON') : 'OFF'});
     chrome.action?.setBadgeBackgroundColor({color:mac.review ? '#B42318' : mac.auto ? '#185A43' : '#B26A00'});
 
     // 1. 若未开启自动发送或有照片需核对，立即退出，绝对不执行任何操作
@@ -105,8 +105,8 @@ async function tick() {
     try { tab = await chrome.tabs.get(bound.tab); } catch { interval = 15000; status = '绑定的聊天标签页已关闭，请重新绑定'; await native({kind:'pageState',detail:status,...bound}); return; }
     if (tab.url !== bound.url) { interval = 6000; status = '等待：请回到绑定的聊天标签页'; await native({kind:'pageState',detail:status,...bound}); return; }
 
-    const readiness = await chrome.tabs.sendMessage(bound.tab, {kind: 'ready'});
-    if (!readiness.ok) { interval = 6000; status = readiness.error; await native({kind:"pageState", detail:status, ...bound}); return; }
+    const readiness = await chrome.tabs.sendMessage(bound.tab, {kind: 'ready',releaseStaged:mac.inflight === false && !mac.review});
+    if (!readiness.ok) { interval = readiness.reason === "generating" ? 15000 : 6000; status = readiness.error; await native({kind:"pageState", detail:status, ...bound}); return; }
 
     await native({kind:"pageState",detail:"",...bound});
     job = await native({kind: 'poll', ...bound});
@@ -169,7 +169,7 @@ async function snapshot() {
     add('当前网页',valid,valid ? (tab.title || 'ChatGPT 聊天') : '需要打开已有的 ChatGPT 聊天');
     if (!valid) { view.title='打开本课的 ChatGPT 聊天';view.next='先打开本课专用的具体聊天，支持普通聊天、项目和自定义 GPT 内的聊天。';return finish(); }
     let page;
-    try { page = await chrome.tabs.sendMessage(tab.id,{kind:'ready',inspect:true}); }
+    try { page = await chrome.tabs.sendMessage(tab.id,{kind:'ready',inspect:true,releaseStaged:mac.inflight === false && !mac.review}); }
     catch { view.state='error';view.title='聊天页面还未接入扩展';view.next='点击下方刷新当前页面，刷新完成后重新打开扩展。';view.action='refresh';return finish(); }
     if (!page.ok && /未识别|没有识别|找不到/.test(page.error || '')) {
       view.state='error';view.title='当前页面的输入框未识别';view.next=page.error;
@@ -177,16 +177,16 @@ async function snapshot() {
     }
     const matched = !!binding && binding.tab === tab.id && binding.url === tab.url && mac.matching;
     add('聊天绑定',matched,matched ? '此标签页已绑定当前 Section' : '尚未绑定此 Section 与聊天');
-    add('自动发送',mac.auto === true,mac.auto ? '已开启' : '已暂停');
+    add('自动发送',(mac.continuous ?? mac.auto) === true,mac.continuous === false && mac.auto ? '已暂停 · 仅处理手动选中的图片' : mac.auto ? '已开启' : '已暂停');
     view.lesson=mac.lesson;view.queue=mac.queued;view.chat=tab.title || 'ChatGPT';view.url=tab.url;
     if (!matched && mac.targetURL && tab.url !== mac.targetURL) { view.title='打开已保存的 Section 聊天';view.next='当前网页是另一条聊天。打开已保存的目标，确认状态后再开启发送。';view.action='focus';return finish(); }
     if (!matched) { view.title='下一步：绑定此聊天';view.next='确认这是当前 Section 的专用聊天，点击绑定。绑定只保存目标；之后由你开启自动发送。';view.action='bind';return finish(); }
-    if (mac.review) { view.state='error';view.title='有照片需要核对';view.next='在 Mac 选中待核对照片，到 ChatGPT 确认是否收到；处理后刷新聊天页。';view.action='refresh';return finish(); }
+    if (mac.review) { view.state='error';view.title='有照片需要核对';view.next='在 Mac 选中待核对照片，到 ChatGPT 确认是否收到；核对后点击“重新检查连接”；输入框如有附件，请先手动处理。';view.action='check';return finish(); }
     if (!mac.auto) { view.title='已绑定，尚未开启发送';view.next='点击开启自动发送。随后关闭此面板，手机拍照确认即可。';view.action='enable';return finish(); }
     if (busy) { view.state='working';view.title='正在投递照片';view.next='关闭此面板即可，聊天标签页保持打开。'+status;view.action='pause';return finish(); }
-    if (!page.ok) { view.state='waiting';view.title='自动发送已开启，暂时等待';view.next=page.error;view.action='pause';return finish(); }
-    view.state='ready';view.title=mac.usb ? '已就绪，可以拍照' : '发送已开启，请连接手机';
-    view.next=mac.usb ? '聊天标签页保持打开即可；手机拍照确认后会在后台发送。' : '在 Mac 点击连接 iPhone；连接成功后，手机拍照确认即可。';
+    if (!page.ok) { view.state='waiting';view.title='自动发送已开启，暂时等待';view.next=page.error;view.action=page.canStop ? 'stopGeneration' : 'check';return finish(); }
+    view.state='ready';view.title=mac.continuous === false ? '仅发送手动选中的图片' : mac.usb ? '已就绪，可以拍照' : '发送已开启，请连接手机';
+    view.next=mac.continuous === false ? '本次只发送选中的图片；其他照片只保存。完成后不会开启持续自动发送。' : mac.usb ? '聊天标签页保持打开即可；手机拍照确认后会在后台发送。' : '在 Mac 点击连接 iPhone；连接成功后，手机拍照确认即可。';
     view.action='pause';return finish();
   } catch(error) {
     view.state='error';view.title='Mac 桥接尚未连接';
@@ -205,6 +205,20 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (tab.id !== binding.tab || tab.url !== binding.url) throw new Error('当前标签页不是绑定的聊天，请重新绑定');
       const result = await native({kind:message.kind,...binding});
       if (!result.ok) throw new Error(result.error);
+      respond({ok:true,view:await snapshot()});
+    })().catch(error=>respond({ok:false,status:error.message}));
+    return true;
+  }
+  if (message.kind === 'stopGeneration') {
+    (async()=>{
+      if (busy || !binding) throw new Error('正在投递或尚未绑定，暂不能停止回答');
+      const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+      if (tab.id !== binding.tab || tab.url !== binding.url) throw new Error('请回到绑定的聊天后操作');
+      const mac = await native({kind:'status',...binding});
+      if (!mac.ok || !mac.matching || mac.inflight || mac.review) throw new Error('请先处理当前投递和待核对照片');
+      const result = await chrome.tabs.sendMessage(binding.tab,{kind:'stopGeneration',url:binding.url});
+      if (!result.ok) throw new Error(result.error);
+      nextCheck = 0; scheduleTick(3000);
       respond({ok:true,view:await snapshot()});
     })().catch(error=>respond({ok:false,status:error.message}));
     return true;

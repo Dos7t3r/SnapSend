@@ -91,6 +91,8 @@ struct WorkspaceView: View {
                 HStack { Text(model.catalog.context(for: photo.sessionID)?.courseName ?? "收件箱").font(Aurora.TypeStyle.heading); Spacer(); Button("关闭") { preview = nil }.keyboardShortcut(.space, modifiers: []) }
                 if let url = model.imageURL(photo) { PreviewImage(url: url).frame(maxWidth: .infinity, maxHeight: .infinity) }
                 HStack { Button("上一张") { navigate(-1) }.keyboardShortcut(.leftArrow, modifiers: []); Button("下一张") { navigate(1) }.keyboardShortcut(.rightArrow, modifiers: []); Spacer(); Text(model.status(photo)).font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary); if model.stageOf(photo) == .failed { Button("重发") { model.sendSinglePhotoToAI(photo) } }; if model.stageOf(photo) == .uncertain { Button("确认已发送") { model.resolveCurrent(sent: true) }; Button("确认未发送，重排") { model.resolveCurrent(sent: false) } }; Menu("管理照片") {
+                    if model.stageOf(photo) == .queued || model.stageOf(photo) == nil { Button("仅保存，移出发送队列") { model.holdPhoto(photo) } }
+                    if model.stageOf(photo) == .held || model.stageOf(photo) == nil { Button("只发送这一张") { model.sendSinglePhotoToAI(photo) } }
                     Button("导出原图") { model.selectedPhotoIDs = [photo.id]; model.batchExportSelected() }
                     Menu("移动到 Section") { ForEach(model.catalog.sections ?? []) { section in Button(section.name) { model.assignPhotos([photo.id], to: section.id, send: false); preview = nil } } }
                     Button("删除 Mac 原图", role: .destructive) { deletingPhoto = true }

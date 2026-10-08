@@ -1,5 +1,6 @@
 (() => {
   let staged = null;
+  let generationSince = 0;
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const visible = node => node && node.getClientRects().length > 0;
   const editor = () => {
@@ -12,8 +13,9 @@
   const form = () => editor()?.closest('form') || editor()?.closest('[data-type="unified-composer"]');
   const send = () => [...(form()?.querySelectorAll('button') || [])].find(b => visible(b) &&
     (b.dataset.testid === 'send-button' || /^(Send|Send prompt|Send message|发送提示|发送消息|发送|傳送)$/.test(b.getAttribute('aria-label') || '')));
-  const stopped = () => [...(form()?.querySelectorAll('button') || [])].some(b => visible(b) &&
+  const stopButton = () => [...(form()?.querySelectorAll('button') || [])].find(b => visible(b) &&
     (b.dataset.testid === 'stop-button' || /^(Stop|停止|Stop generating|停止生成|Stop streaming)$/.test(b.getAttribute('aria-label') || '')));
+  const stopped = () => !!stopButton();
   const messages = () => {
     const classic = [...document.querySelectorAll('[data-message-author-role="user"]')];
     if (classic.length) return classic;
@@ -22,17 +24,38 @@
       .filter(e => /^(你说：|你說：|You said:)$/.test(e.textContent.trim()))
       .map(e => e.parentElement).filter(Boolean);
   };
-  function ready(inspect = false) {
+  function ready(inspect = false, releaseStaged = false) {
     const input = editor();
     if (!input) return {ok:false,error:'未识别到聊天输入框（支持旧版和项目新版布局）。请等页面加载完成；若输入框已经显示，请确认扩展已更新至 0.5.0'};
     if (!form()) return {ok:false,error:'已找到输入框，但没有识别到附件操作区，请更新扩展后重试'};
     if ((input.innerText || input.value || '').trim()) return {ok:false,error:'等待：输入框有你的草稿，请先发送或清空'};
-    if (stopped()) return {ok:false,error:'等待：AI 正在回答'};
-    if (staged) return {ok:false,error:'已有待核对附件，请先核对并刷新页面'};
+    const generating = stopped();
+    if (generating) {
+      if (!generationSince) generationSince = Date.now();
+      return {ok:false,reason:'generating',canStop:true,error:Date.now() - generationSince >= 90000 ? 'AI 回答已超过 90 秒。可停止当前回答后继续发送，不必刷新页面' : '等待：AI 正在回答；结束后会自动继续，也可停止当前回答'};
+    }
+    generationSince = 0;
+    // Mac explicitly confirms there is no active attempt or unresolved receipt. Never remove an attachment.
+    if (staged && releaseStaged && scopeCleared(staged)) staged = null;
+    if (staged) return {ok:false,reason:'review',error:'已有待核对附件，请先在 Mac 核对；若输入框还有附件，请处理后重新检查'};
     const scope = form();
     if ([...scope.querySelectorAll('button')].some(b => /remove|移除|删除附件/i.test(b.getAttribute('aria-label') || '')))
       return {ok:false,error:'等待：输入框已有附件，请先处理'};
     return {ok:true};
+  }
+  function scopeCleared(attempt) {
+    const scope = form();
+    return scope && scope.querySelectorAll('img').length <= attempt.oldImages &&
+      [...scope.querySelectorAll('button')].filter(b => /remove|移除|删除附件/i.test(b.getAttribute('aria-label') || '')).length <= attempt.oldRemoves;
+  }
+  async function stopGeneration(url) {
+    if (location.href !== url) throw new Error('聊天已变化，未停止任何回答');
+    const button = stopButton();
+    if (!button) return {ok:true};
+    if (button.disabled || button.getAttribute('aria-disabled') === 'true') throw new Error('停止按钮暂不可用，请到聊天检查');
+    button.click();
+    for (let i=0;i<20;i++) { await wait(250); if (location.href !== url) throw new Error('聊天已变化，请核对'); if (!stopped()) { generationSince = 0; return {ok:true}; } }
+    throw new Error('网页尚未确认停止，已保留队列，请到聊天检查停止按钮');
   }
   async function attach(job) {
     const check = ready(); if (!check.ok) return check;
@@ -125,10 +148,11 @@
   }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (sender.id !== chrome.runtime.id) return;
-    if (message.kind === 'ready') { respond(ready(message.inspect === true)); return; }
+    if (message.kind === 'ready') { respond(ready(message.inspect === true, message.releaseStaged === true)); return; }
     const action = message.kind === 'attach' ? attach(message.job) :
                    message.kind === 'submit' ? submit(message.id) :
-                   message.kind === 'sendPrompt' ? sendPrompt(message.text, message.url) : null;
+                   message.kind === 'sendPrompt' ? sendPrompt(message.text, message.url) :
+                   message.kind === 'stopGeneration' ? stopGeneration(message.url) : null;
     if (!action) return;
     action.then(respond).catch(error => respond({ok:false,error:error.message})); return true;
   });

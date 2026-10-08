@@ -13,6 +13,7 @@ struct PhoneView: View {
     @State private var forget = false
     @State private var flashEnabled = false
     @State private var flash = false
+    @AppStorage("SnapSendCaptureToAI") private var captureToAI = true
     @State private var shutterPulse = false
     @State private var thumbnailPulse = false
     @State private var zoomSelection: CGFloat = 1
@@ -133,6 +134,10 @@ struct PhoneView: View {
                     if flash { Color.white.opacity(SnapTheme.Alpha.flash).allowsHitTesting(false) }
                 }.animation(SnapTheme.Motion.fade, value: captureState).frame(width: size.width, height: size.height).clipShape(RoundedRectangle(cornerRadius: 28)).captureAnchor("preview").padding(.top, 12)
                 captureControls.frame(height: 44).captureAnchor("controls").padding(.top, 12)
+                Button { withAnimation(reduceMotion ? SnapTheme.Motion.fade : SnapTheme.Motion.state) { captureToAI.toggle() } } label: {
+                    Label(captureToAI ? "课堂照片 · 允许发送到 AI" : "私人照片 · 仅保存到手机和 Mac", systemImage: captureToAI ? "paperplane" : "lock.fill")
+                        .font(SnapTheme.TypeStyle.micro).frame(maxWidth: .infinity, minHeight: 44).foregroundStyle(captureToAI ? .white : SnapTheme.local)
+                }.accessibilityHint("拍摄前切换；此选择会随每张照片保存，不会因重新连接改变")
                 if let error = model.errorMessage { Text(error).font(SnapTheme.TypeStyle.micro).foregroundStyle(SnapTheme.failure).lineLimit(2).padding(.top, 8) }
                 Spacer(minLength: 0)
             }.frame(width: geometry.size.width, height: geometry.size.height, alignment: .top).dynamicTypeSize(...DynamicTypeSize.large)
@@ -184,9 +189,10 @@ struct PhoneView: View {
         withAnimation(reduceMotion ? SnapTheme.Motion.fade : SnapTheme.Motion.press) { shutterPulse = true }
         Task { try? await Task.sleep(for: .seconds(SnapTheme.Motion.flash)); withAnimation(reduceMotion ? SnapTheme.Motion.fade : SnapTheme.Motion.state) { shutterPulse = false } }
         Task { try? await Task.sleep(for: .seconds(SnapTheme.Motion.flash)); flash = false }
+        let sendToAI = captureToAI
         let context = model.activeContext, jpegQuality = quality == "快速" ? 0.6 : 0.9
         let orientation = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.interfaceOrientation ?? .portrait
-        camera.capture(flash: flashEnabled, fast: quality == "快速", angle: CameraPreview.PreviewSurface.angle(orientation)) { data in model.save(data, context: context, quality: jpegQuality) }
+        camera.capture(flash: flashEnabled, fast: quality == "快速", angle: CameraPreview.PreviewSurface.angle(orientation)) { data in model.save(data, context: context, quality: jpegQuality, sendToAI: sendToAI) }
     }
     private func savedFeedback(_ id: UUID?) {
         guard !reduceMotion, let id else { return }; feedbackTask?.cancel(); flying = false; flightID = id

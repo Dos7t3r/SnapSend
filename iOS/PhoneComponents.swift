@@ -3,16 +3,17 @@ import UIKit
 
 extension PhonePhoto {
     var deliveryFailed: Bool { stage == "failed" || stage == "uncertain" }
-    var macSaved: Bool { receivedByMac || ["received", "queued", "preparing", "submitting", "sent", "uncertain", "failed"].contains(stage ?? "") }
+    var macSaved: Bool { receivedByMac || ["received", "held", "queued", "preparing", "submitting", "sent", "uncertain", "failed"].contains(stage ?? "") }
     func statusText(sendingID: UUID?) -> String {
         if sendingID == id { return "已保存在手机 · 正在传到 Mac" }
         switch stage {
+        case "held": return "仅保存 · 不会自动发送给 AI"
         case "sent": return "AI 已接收"
         case "uncertain": return "AI 结果待核对 · 请在 Mac 处理"
         case "failed": return "AI 发送失败 · 请在 Mac 重试"
         case "preparing", "submitting": return "已到 Mac · 正在发送给 AI"
         case "queued": return "已到 Mac · 等待 AI 投递"
-        default: return macSaved ? "已到 Mac · 等待 AI 投递" : "已保存在手机 · 等待 USB 传输"
+        default: if !sendToAI { return macSaved ? "仅保存 · 已到 Mac" : "仅保存 · 等待 USB 归档" }; return macSaved ? "已到 Mac · 等待 AI 投递" : "已保存在手机 · 等待 USB 传输"
         }
     }
     func statusColor(sendingID: UUID?) -> Color { deliveryFailed ? SnapTheme.failure : stage == "sent" ? SnapTheme.success : macSaved ? SnapTheme.blue : SnapTheme.local }
