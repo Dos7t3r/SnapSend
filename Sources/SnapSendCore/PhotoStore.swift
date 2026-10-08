@@ -28,6 +28,17 @@ public final class PhotoStore {
         let catalogFile = directory.appendingPathComponent("courses.json")
         catalog = FileManager.default.fileExists(atPath: catalogFile.path)
             ? try JSONDecoder().decode(CourseCatalog.self, from: Data(contentsOf: catalogFile)) : CourseCatalog()
+        // Optional fields keep old catalogs decodable. Migration never moves originals.
+        if catalog.sections == nil {
+            var updated = catalog; updated.sections = []
+            for course in updated.courses {
+                let section = CourseSection(courseID: course.id, name: "默认 Section")
+                updated.sections?.append(section)
+                for index in updated.lessons.indices where updated.lessons[index].courseID == course.id { updated.lessons[index].sectionID = section.id }
+            }
+            updated.manualSectionID = updated.section(for: updated.activeLessonID)?.id
+            try commit(updated)
+        }
         // Existing flat archives stay where they are; migration only annotates their class.
         if records.contains(where: { $0.sessionID == nil }) {
             let legacy = try ensureLegacyLesson()
@@ -52,7 +63,9 @@ public final class PhotoStore {
         guard !name.isEmpty, name.count <= 80 else { throw StoreError.invalidName }
         var updated = catalog
         let course = Course(id: UUID(), name: name, createdAt: now)
-        let lesson = Lesson(id: UUID(), courseID: course.id, title: "", startedAt: now, timeZoneID: TimeZone.current.identifier)
+        let section = CourseSection(courseID: course.id, name: "LEC0101")
+        let lesson = Lesson(id: UUID(), courseID: course.id, title: "", startedAt: now, timeZoneID: TimeZone.current.identifier, sectionID: section.id)
+        updated.sections = (updated.sections ?? []) + [section]; updated.manualSectionID = section.id
         updated.courses.append(course); updated.lessons.append(lesson); updated.activeLessonID = lesson.id
         try commit(updated)
         return lesson
@@ -65,6 +78,40 @@ public final class PhotoStore {
         updated.lessons.append(lesson); updated.activeLessonID = lesson.id
         try commit(updated)
         return lesson
+    }
+    public func updateSection(_ section: CourseSection) throws {
+        guard !section.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, section.name.count <= 80,
+              section.schedule == nil || section.schedule!.isValid,
+              section.chatURL == nil || ChatURL.isConversation(section.chatURL!),
+              catalog.courses.contains(where: { $0.id == section.courseID && $0.archived != true }) else { throw StoreError.invalidName }
+        var updated = catalog
+        var sections = updated.sections ?? []
+        if let index = sections.firstIndex(where: { $0.id == section.id }) { sections[index] = section } else { sections.append(section) }
+        updated.sections = sections; try commit(updated)
+    }
+    public func selectSection(_ id: UUID?) throws {
+        if let id {
+            guard let section = catalog.sections?.first(where: { $0.id == id }), catalog.courses.contains(where: { $0.id == section.courseID && $0.archived != true }) else { throw StoreError.unknownLesson }
+        }
+        var updated = catalog; updated.manualSectionID = id; try commit(updated)
+    }
+    /// Route at Mac receipt time; reuse a date archive without changing the Section binding.
+    public func routeLesson(now: Date = Date(), calendar: Calendar = .current, activate: Bool = true) throws -> UUID {
+        if let section = catalog.targetSection(at: now, calendar: calendar) {
+            if let lesson = catalog.lessons.last(where: { $0.sectionID == section.id && calendar.isDate($0.startedAt, inSameDayAs: now) }) {
+                if activate, catalog.activeLessonID != lesson.id { try activateLesson(lesson.id) }
+                return lesson.id
+            }
+            var updated = catalog
+            let lesson = Lesson(id: UUID(), courseID: section.courseID, title: "", startedAt: now, timeZoneID: calendar.timeZone.identifier, sectionID: section.id)
+            updated.lessons.append(lesson); if activate { updated.activeLessonID = lesson.id }; try commit(updated); return lesson.id
+        }
+        if let inbox = catalog.inboxLessonID { if activate, catalog.activeLessonID != nil { try activateLesson(nil) }; return inbox }
+        var updated = catalog
+        let course = Course(id: UUID(), name: "收件箱", createdAt: now)
+        let lesson = Lesson(id: UUID(), courseID: course.id, title: "未分配照片", startedAt: now, timeZoneID: calendar.timeZone.identifier)
+        updated.courses.append(course); updated.lessons.append(lesson); updated.inboxLessonID = lesson.id; if activate { updated.activeLessonID = nil }
+        try commit(updated); return lesson.id
     }
     public func renameCourse(_ id: UUID, name: String) throws {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)

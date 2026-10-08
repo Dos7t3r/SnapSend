@@ -9,6 +9,9 @@ public struct DeliveryEntry: Codable, Identifiable, Sendable {
     public var destination: String
     public var state: DeliveryState
     public var detail: String
+    public init(id: UUID, lessonID: UUID, destination: String, state: DeliveryState, detail: String) {
+        self.id = id; self.lessonID = lessonID; self.destination = destination; self.state = state; self.detail = detail
+    }
 }
 public final class DeliveryLedger {
     public private(set) var entries: [DeliveryEntry]

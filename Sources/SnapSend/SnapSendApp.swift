@@ -11,13 +11,14 @@ struct SnapSendApp: App {
     @StateObject private var model = WorkspaceModel()
 
     var body: some Scene {
-        WindowGroup("SnapSend · 课堂拍照助手") {
+        WindowGroup("SnapSend", id: "workspace") {
             WorkspaceView(model: model)
-                .frame(minWidth: 1040, minHeight: 680)
+                .frame(minWidth: 960, minHeight: 640)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     model.disconnect(keepStatus: false, userInitiated: true)
                 }
-        }
+        }.windowStyle(.hiddenTitleBar).defaultSize(width: 1080, height: 720)
+        MenuBarExtra { MenuBarPanel(model: model) } label: { Image(systemName: model.menuSymbol).renderingMode(.original).foregroundStyle(model.menuColor) }.menuBarExtraStyle(.window)
     }
 }
 
@@ -28,10 +29,10 @@ enum AlertStyle: Equatable {
 
     var color: Color {
         switch self {
-        case .info: return .blue
-        case .warning: return .orange
-        case .error: return .red
-        case .success: return .green
+        case .info: return Aurora.Colors.blue
+        case .warning: return Aurora.Colors.phone
+        case .error: return Aurora.Colors.error
+        case .success: return Aurora.Colors.success
         }
     }
 
@@ -78,15 +79,19 @@ final class WorkspaceModel: ObservableObject {
     @Published var deliveryTarget = "chrome"
     @Published var autoSend = false
     @Published var deliveryReport = "尚未绑定聊天"
-    @Published var deliveries: [DeliveryEntry] = []
+    private var deliveryByID: [UUID: DeliveryEntry] = [:]
+    @Published var deliveries: [DeliveryEntry] = [] {
+        didSet { deliveryByID = Dictionary(deliveries.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }) }
+    }
     @Published var boundLesson: UUID?
     @Published var boundChat = ""
     @Published var browserConnected = false
     @Published var browserPageStatus = ""
+    private var targetBoundaryTask: Task<Void, Never>?
+    @Published var lastReceivedID: UUID?
     private var browserFocusRequested = false
     @Published var nativeBusy = false
     @Published var alertBanner: AppAlertBanner? = nil
-    @Published var showingSettingsSheet = false
     @Published var showingNewCourseAlert = false
     @Published var showingRenameAlert = false
 
@@ -131,6 +136,8 @@ final class WorkspaceModel: ObservableObject {
     private var retryAttempt = 0
     private var browserPresenceTask: Task<Void, Never>?
     private var trusted: [String: String] = [:]
+    private var pairingVaultReady = false
+    private var pairingLoadBusy = false
     private let macID: UUID = {
         let defaults = UserDefaults.standard
         if let value = defaults.string(forKey: "SnapSendMacID"), let id = UUID(uuidString: value) { return id }
@@ -163,24 +170,20 @@ final class WorkspaceModel: ObservableObject {
                                                   appropriateFor: nil, create: true)
             store = try PhotoStore(directory: base.appendingPathComponent("SnapSend/Prototype"))
             ledger = try DeliveryLedger(directory: store!.directory)
-            deliveries = ledger!.entries
             records = store!.records
             // Repair an interrupted move: archived photo metadata is authoritative.
+            let archivedLessons = Dictionary(records.compactMap { photo in photo.sessionID.map { (photo.id, $0) } }, uniquingKeysWith: { first, _ in first })
             for entry in ledger!.entries {
-                if let lesson = records.first(where: { $0.id == entry.id })?.sessionID, lesson != entry.lessonID {
+                if let lesson = archivedLessons[entry.id], lesson != entry.lessonID {
                     try ledger!.reassign(ids: [entry.id], lessonID: lesson)
                 }
             }
-            deliveries = ledger!.entries
+            refreshDeliveries()
             catalog = store!.catalog
             selectedLesson = catalog.activeLessonID ?? catalog.lessons.last?.id
+            resolveTarget()
         } catch {
             showAlert(title: "归档无法打开", message: error.localizedDescription, style: .error)
-        }
-        do {
-            trusted = try PairingVault.load()
-        } catch {
-            showAlert(title: "钥匙串读取失败", message: error.localizedDescription, style: .warning)
         }
         browserBridge.command = { [weak self] in self?.browserCommand($0) ?? ["ok": false] }
         browserBridge.failure = { [weak self] in
@@ -194,13 +197,107 @@ final class WorkspaceModel: ObservableObject {
             showAlert(title: "桥接端口占用", message: "端口可能被其他进程占用，请关闭多余程序后重启。", style: .error)
         }
 
-        if autoReconnect {
-            connect(isAutoRetry: true)
+        loadPairings()
+    }
+
+    private func loadPairings() {
+        guard !pairingLoadBusy else { return }
+        pairingLoadBusy = true; connectionStatus = "正在读取设备配对信息…"
+        Task { [weak self] in
+            do {
+                let pairings = try await Task.detached(priority: .utility) { try PairingVault.load() }.value
+                guard let self else { return }
+                self.trusted = pairings; self.pairingVaultReady = true; self.pairingLoadBusy = false
+                self.connectionStatus = "USB 尚未连接"
+                if self.autoReconnect { self.connect(isAutoRetry: true) }
+            } catch {
+                guard let self else { return }; self.pairingLoadBusy = false
+                self.connectionStatus = "配对信息尚未读取"
+                self.showAlert(title: "设备配对信息待读取", message: "若 macOS 提示钥匙串访问，请在系统提示中处理后重试。原配对记录未删除。", style: .warning, actionTitle: "重试读取") { self.loadPairings() }
+            }
         }
     }
 
+    private func matchesTarget(_ lessonID: UUID?) -> Bool {
+        guard let section = catalog.section(for: boundLesson) else { return false }
+        return catalog.section(for: lessonID)?.id == section.id
+    }
+    var targetDisplayName: String { targetSection.map { section in (catalog.courses.first { $0.id == section.courseID }?.name ?? "") + " · " + section.name } ?? "" }
+    var targetSection: CourseSection? { catalog.targetSection() }
+    var inboxPhotos: [PhotoRecord] { records.filter { $0.sessionID == catalog.inboxLessonID } }
+    var pendingPhotos: [PhotoRecord] { records.filter { photo in catalog.courses.first(where: { $0.id == catalog.context(for: photo.sessionID)?.lesson.courseID })?.archived != true && stageOf(photo) != .sent && (photo.sessionID == catalog.inboxLessonID || stageOf(photo) == nil || stageOf(photo) == .queued) } }
+    var menuColor: Color { deliveries.contains { [.uncertain, .failed].contains($0.state) } ? Aurora.Colors.error : deliveries.contains { [.preparing, .submitting].contains($0.state) } ? Aurora.Colors.blue : usbConnected && browserConnected && chatMatchesClass && autoSend ? Aurora.Colors.success : Aurora.Colors.queued }
+    var menuSymbol: String { deliveries.contains { [.uncertain, .failed].contains($0.state) } ? "exclamationmark.circle.fill" : deliveries.contains { [.preparing, .submitting].contains($0.state) } ? "paperplane.fill" : usbConnected && browserConnected && chatMatchesClass && autoSend ? "checkmark.circle.fill" : "camera" }
+    func updateSection(_ section: CourseSection) {
+        do { try store?.updateSection(section); refreshCatalog() }
+        catch { showAlert(title: "Section 未保存", message: "检查名称、聊天链接和时间；结束时间须晚于开始时间。", style: .error) }
+    }
+    func chooseSection(_ id: UUID?) {
+        guard promptInFlight == nil, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
+            showAlert(title: "正在发送", message: "请等待当前发送完成后切换目标。", style: .warning); return
+        }
+        do { try store?.selectSection(id); resolveTarget(); selectedLesson = catalog.activeLessonID; sendContext() }
+        catch { showAlert(title: "目标未切换", message: error.localizedDescription, style: .error) }
+    }
+    func renameCourseID(_ id: UUID, name: String) {
+        do { try store?.renameCourse(id, name: name); refreshCatalog() } catch { showAlert(title: "名称未保存", message: error.localizedDescription, style: .error) }
+    }
+    func assignPhotos(_ ids: Set<UUID>, to section: UUID, send: Bool) {
+        guard !ids.isEmpty, promptInFlight == nil, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) || ids.contains($0.id) && $0.state == .uncertain }) else {
+            showAlert(title: "请先核对发送状态", message: "正在发送或未确认的照片不能移动，以免重复发送。", style: .warning); return
+        }
+        chooseSection(section)
+        guard targetSection?.id == section, let lesson = catalog.activeLessonID else {
+            showAlert(title: "课表目标优先", message: "当前正在上课的 Section 优先于手动选择。请在课后分配这些照片。", style: .warning); return
+        }
+        selectedPhotoIDs = ids; moveSelectedPhotos(to: lesson)
+        if send { for photo in records where ids.contains(photo.id) { sendSinglePhotoToAI(photo) }; enableDelivery() }
+    }
+    func resolveTarget(now: Date = Date()) {
+        guard let store else { return }
+        // In-flight receipts must still match the original chat; switch after completion.
+        guard promptInFlight == nil, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else { return }
+        do {
+            let oldSection = catalog.section(for: boundLesson)?.id
+            _ = try store.routeLesson(now: now); catalog = store.catalog
+            let target = catalog.targetSection()
+            let sameSectionBinding = oldSection != nil && oldSection == target?.id &&
+                ((deliveryTarget == "chrome" && boundDestination == "chrome" && boundChat == target?.chatURL) || (deliveryTarget == "native" && boundDestination == "native" && !boundChat.isEmpty))
+            if sameSectionBinding {
+                // The date archive is bookkeeping; keep the same Section's live chat and sender.
+                boundLesson = catalog.activeLessonID
+                if pendingPromptToSend != nil { pendingPromptLesson = boundLesson }
+            } else if boundLesson != catalog.activeLessonID || boundChat != (target?.chatURL ?? "") && deliveryTarget == "chrome" {
+                autoSend = false; browserTab = nil; browserPageStatus = ""; boundLesson = catalog.activeLessonID
+                boundChat = target?.chatURL ?? ""; boundDestination = boundChat.isEmpty ? "" : "chrome"
+                if oldSection != target?.id { pendingPromptToSend = nil }
+                deliveryReport = boundChat.isEmpty ? "选择 Section 并绑定聊天；照片会继续保存。" : "聊天已保存，打开对应 Chrome 页面后可开启发送。"
+            }
+        } catch { showAlert(title: "归档目标不可用", message: error.localizedDescription, style: .error) }
+        targetBoundaryTask?.cancel()
+        // One wake at the next schedule boundary or midnight; no per-second polling.
+        let cal = Calendar.current, start = cal.startOfDay(for: now)
+        var boundaries = [cal.date(byAdding: .day, value: 1, to: start)!]
+        for section in catalog.sections ?? [] where section.schedule?.weekday == cal.component(.weekday, from: now) {
+            if let schedule = section.schedule { for minute in [schedule.startMinute, schedule.endMinute] { if let date = minute == 1440 ? cal.date(byAdding: .day, value: 1, to: start) : cal.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: start), date > now { boundaries.append(date) } } }
+        }
+        let wait = max(1, boundaries.min()!.timeIntervalSince(now))
+        targetBoundaryTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(wait)) } catch { return }; self?.resolveTarget(); self?.sendContext() }
+    }
+
+    #if DEBUG || WORKSPACE_FIXTURES
+    func configurePreview(store: PhotoStore, usb: Bool = true, connected: Bool = true, sending: Bool = true) throws {
+        self.store = store; ledger = try DeliveryLedger(directory: store.directory)
+        refreshDeliveries()
+        records = store.records; catalog = store.catalog; selectedLesson = catalog.activeLessonID
+        pairingVaultReady = true; authenticated = usb; browserConnected = connected; browserLastSeen = connected ? Date() : .distantPast
+        boundLesson = catalog.activeLessonID; boundChat = catalog.targetSection()?.chatURL ?? ""
+        boundDestination = boundChat.isEmpty ? "" : "chrome"; browserTab = 7; autoSend = sending
+        connectionStatus = usb ? "USB 已连接" : "插线并解锁手机"
+    }
+    #endif
     var usbConnected: Bool { authenticated }
-    var chatMatchesClass: Bool { boundLesson != nil && boundLesson == catalog.activeLessonID && boundDestination == deliveryTarget }
+    var chatMatchesClass: Bool { !boundChat.isEmpty && boundLesson != nil && boundLesson == catalog.activeLessonID && boundDestination == deliveryTarget }
 
     var activeContext: LessonContext? { catalog.context(for: catalog.activeLessonID) }
     var selectedContext: LessonContext? { catalog.context(for: selectedLesson) }
@@ -269,19 +366,19 @@ final class WorkspaceModel: ObservableObject {
     private func refreshCatalog() {
         guard let store else { return }
         catalog = store.catalog; records = store.records
-        if boundLesson != catalog.activeLessonID {
-            autoSend = false
-            deliveryReport = "当前课堂已改变，请重新绑定 AI 聊天。"
-        }
+        resolveTarget()
         sendContext()
     }
 
     func createCourse(_ name: String) {
+        guard promptInFlight == nil, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
+            showAlert(title: "正在发送", message: "发送完成后可以创建并切换课程。", style: .warning); return
+        }
         do {
             guard let store else { return }
             let lesson = try store.createCourse(name: name)
             selectedLesson = lesson.id; selected = nil; refreshCatalog()
-            showAlert(title: "课程创建成功", message: "已开始“\(name)”的第一节课。", style: .success)
+            showAlert(title: "课程创建成功", message: "已创建“\(name)”和默认 Section，可修改名称并绑定聊天。", style: .success)
             if autoSendPromptOnStartLesson {
                 triggerAutoPromptOnLessonStart()
             }
@@ -386,10 +483,6 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func importPhoto() {
-        guard selectedLesson != nil else {
-            showAlert(title: "无法导入", message: "请先在左侧选择一节课。", style: .warning)
-            return
-        }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.jpeg, .png, .heic]
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -406,7 +499,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func receive(_ data: Data, header: WireHeader? = nil) throws {
+    func receive(_ data: Data, header: WireHeader? = nil) throws {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
@@ -414,19 +507,28 @@ final class WorkspaceModel: ObservableObject {
             throw CocoaError(.fileReadCorruptFile)
         }
         guard let store else { throw CocoaError(.fileWriteUnknown) }
+        // Duplicate retries keep their original archive. New photos resolve the target on the Mac.
+        resolveTarget()
+        let busy = promptInFlight != nil || deliveries.contains { [.preparing, .submitting].contains($0.state) }
+        let route = try records.first(where: { $0.id == header?.id })?.sessionID ?? store.routeLesson(activate: !busy)
         let item = try store.save(data, id: header?.id ?? UUID(), expectedHash: header?.sha256,
-                                  sessionID: header == nil ? selectedLesson : header?.sessionID, capturedAt: header?.capturedAt)
+                                  sessionID: route, capturedAt: header?.capturedAt)
         records = store.records; catalog = store.catalog
         if selectedLesson == nil || selectedLesson == item.sessionID {
             selected = item.id; selectedLesson = item.sessionID
         }
+        lastReceivedID = item.id
         notice = "照片已保存到 Mac。"
-        sendStatusToPhone(id: item.id, stage: "received", detail: "Mac 已保存并归档")
+        let previousDelivery = deliveryByID[item.id]
+        sendStatusToPhone(id: item.id, stage: previousDelivery?.state.rawValue ?? "received",
+                          detail: previousDelivery?.detail ?? "Mac 已保存并归档")
 
-        if autoSend, boundLesson == item.sessionID, let lessonID = item.sessionID {
+        if matchesTarget(item.sessionID), chatMatchesClass, let lessonID = item.sessionID {
             try ledger?.enqueue(id: item.id, lessonID: lessonID, destination: deliveryTarget)
             refreshDeliveries()
-            sendStatusToPhone(id: item.id, stage: "queued", detail: "等待投递 AI")
+            if let delivery = deliveryByID[item.id] {
+                sendStatusToPhone(id: item.id, stage: delivery.state.rawValue, detail: delivery.detail)
+            }
             pumpNative()
         }
     }
@@ -442,6 +544,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func connect(isAutoRetry: Bool = false) {
+        guard pairingVaultReady else {
+            connectionStatus = "正在读取设备配对信息；若有系统提示，请先处理"
+            loadPairings(); return
+        }
         if !isAutoRetry {
             userRequestedDisconnect = false
             retryAttempt = 0
@@ -604,7 +710,7 @@ final class WorkspaceModel: ObservableObject {
                                 self.handshakeTimeout?.cancel(); self.handshakeTimeout = nil
                                 self.autoReconnectTask?.cancel(); self.autoReconnectTask = nil
                                 self.connectionStatus = "USB 已连接 · 设备已就绪"
-                                self.notice = "照片会按拍摄时所属的课堂自动归档。"
+                                self.notice = "照片按当前 Section 自动归档；未选择目标时进入收件箱。"
                                 self.sendContext()
                                 self.postSystemNotification(title: "SnapSend", message: "iPhone 已连接并完成认证")
                                 self.dismissAlert()
@@ -670,6 +776,27 @@ final class WorkspaceModel: ObservableObject {
         axReport = "检查了 \(visited) 个控件\n" + roles.sorted { $0.key < $1.key }.map { "\($0.key)：\($0.value)" }.joined(separator: "\n")
     }
 
+    func selectDeliveryTarget(_ target: String) {
+        guard ["chrome", "native"].contains(target), !nativeBusy, promptInFlight == nil,
+              !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else { return }
+        autoSend = false; deliveryTarget = target; boundDestination = ""; boundChat = ""; browserTab = nil
+        if target == "chrome" { resolveTarget() }
+        deliveryReport = target == "chrome" ? "已恢复 Section 的网页聊天，检查扩展连接后开启发送。" : "请打开 AI 专用聊天并绑定当前窗口。"
+    }
+    var chatDisplayName: String {
+        deliveryTarget == "native" ? (chatMatchesClass ? boundChat : "未绑定 AI 窗口") : targetSection?.chatURL.flatMap { URL(string: $0)?.host } ?? "未绑定聊天 · 可以拍照并保存"
+    }
+    func chooseNativeApplication() {
+        guard !nativeBusy, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else { return }
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications"); panel.prompt = "选择 AI App"
+        guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
+        targetBundle = id; pauseDelivery(); boundDestination = ""; boundChat = ""
+        axReport = "已选择 \(url.deletingPathExtension().lastPathComponent)，打开专用聊天后检查权限并绑定窗口。"
+    }
+    func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") { NSWorkspace.shared.open(url) }
+    }
     func testNativeAccessibility() {
         inspectChatGPT()
     }
@@ -692,11 +819,11 @@ final class WorkspaceModel: ObservableObject {
     func refreshDeliveries() { deliveries = ledger?.entries ?? [] }
 
     func status(_ photo: PhotoRecord) -> String {
-        deliveries.first(where: { $0.id == photo.id }).map { $0.detail } ?? photo.status
+        deliveryByID[photo.id]?.detail ?? photo.status
     }
 
     func stageOf(_ photo: PhotoRecord) -> DeliveryState? {
-        deliveries.first(where: { $0.id == photo.id })?.state
+        deliveryByID[photo.id]?.state
     }
 
     func changeDelivery(_ id: UUID, _ state: DeliveryState, _ detail: String) throws {
@@ -720,10 +847,16 @@ final class WorkspaceModel: ObservableObject {
             showAlert(title: "浏览器未就绪", message: "Chrome 扩展未连接，请在 Chrome 页面打开扩展图标。", style: .warning)
             return
         }
-        guard !deliveries.contains(where: { $0.lessonID == boundLesson && [.uncertain, .failed].contains($0.state) }) else {
+        guard !deliveries.contains(where: { matchesTarget($0.lessonID) && [.uncertain, .failed].contains($0.state) }) else {
             showAlert(title: "存在待核对照片", message: "请先核对异常照片后再开启自动发送。", style: .warning)
             return
         }
+        do {
+            for photo in records where matchesTarget(photo.sessionID) && stageOf(photo) == nil {
+                if let lesson = photo.sessionID { try ledger?.enqueue(id: photo.id, lessonID: lesson, destination: deliveryTarget) }
+            }
+            refreshDeliveries()
+        } catch { showAlert(title: "队列未保存", message: error.localizedDescription, style: .error); return }
         autoSend = true
         deliveryReport = "自动发送已开启：仅投递当前课堂新照片。"
         showAlert(title: "自动发送已开启", message: "新拍照的照片将自动投递至绑定的 ChatGPT 会话。", style: .success)
@@ -745,7 +878,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func attachmentTest() {
-        guard !nativeBusy, let photo = current, let url = imageURL(photo), boundLesson == photo.sessionID, deliveryTarget == "native" else {
+        guard !nativeBusy, let photo = current, let url = imageURL(photo), matchesTarget(photo.sessionID), deliveryTarget == "native" else {
             showAlert(title: "测试前准备", message: "请在中间选中一张照片并绑定原生窗口。", style: .warning); return
         }
         nativeBusy = true
@@ -777,15 +910,15 @@ final class WorkspaceModel: ObservableObject {
 
     private func pumpNative() {
         guard autoSend, deliveryTarget == "native", !nativeBusy,
-              let entry = deliveries.first(where: { $0.state == .queued && $0.lessonID == boundLesson && $0.destination == "native" }),
-              let photo = records.first(where: { $0.id == entry.id }), let url = imageURL(photo) else { return }
+              let entry = deliveries.first(where: { $0.state == .queued && matchesTarget($0.lessonID) && $0.destination == "native" }),
+              let photo = records.first(where: { $0.id == entry.id }), photo.sessionID == entry.lessonID, let url = imageURL(photo) else { return }
         nativeBusy = true
         nativeTask = Task {
             defer { nativeBusy = false }
             do {
                 try changeDelivery(entry.id, .preparing, "正在附加图片")
                 try await NativeDelivery.send(url: url, bundle: targetBundle, windowTitle: nativeWindow, submit: true) {
-                    guard self.autoSend, self.boundLesson == entry.lessonID else { throw NativeDelivery.Failure("发送已暂停。") }
+                    guard self.autoSend, self.matchesTarget(entry.lessonID) else { throw NativeDelivery.Failure("发送已暂停。") }
                     try self.changeDelivery(entry.id, .submitting, "正在点击发送")
                 }
                 try changeDelivery(entry.id, .uncertain, "已点击发送；原生客户端回执待核对。")
@@ -801,7 +934,7 @@ final class WorkspaceModel: ObservableObject {
 
     // MARK: - Browser Command Bridge & Prompt Dispatch
 
-    private func browserCommand(_ message: [String: Any]) -> [String: Any] {
+    func browserCommand(_ message: [String: Any]) -> [String: Any] {
         browserLastSeen = Date()
         if !browserConnected { browserConnected = true }
         browserPresenceTask?.cancel()
@@ -811,20 +944,32 @@ final class WorkspaceModel: ObservableObject {
         }
         let kind = message["kind"] as? String ?? ""
 
+        if kind == "requestFocus" { requestBrowserFocus(); return ["ok": chatMatchesClass] }
+        if kind == "restore" {
+            guard let tab = message["tab"] as? Int, let url = message["url"] as? String,
+                  url == targetSection?.chatURL, url == boundChat, deliveryTarget == "chrome",
+                  message["section"] as? String == targetSection?.id.uuidString,
+                  promptInFlight == nil, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
+                return ["ok": false, "error": "保存的 Section 目标不匹配，或正在发送"]
+            }
+            browserTab = tab; boundDestination = "chrome"; boundLesson = catalog.activeLessonID
+            return ["ok": true]
+        }
         if kind == "focusResult" { browserFocusRequested = false; return ["ok": true] }
         if kind == "pageState", message["tab"] as? Int == browserTab, message["url"] as? String == boundChat {
             let detail = message["detail"] as? String ?? "浏览器等待中"
             if browserPageStatus != detail { browserPageStatus = detail }
             return ["ok": true]
         }
+        if kind == "status", browserTab == nil, chatMatchesClass, message["url"] as? String == boundChat { browserTab = message["tab"] as? Int }
         if kind == "status" {
             let matching = message["tab"] as? Int == browserTab && message["url"] as? String == boundChat &&
                 boundLesson == catalog.activeLessonID && boundDestination == "chrome"
             return ["ok": true, "version": 4, "versionString": SnapSendVersion, "usb": authenticated,
-                    "lesson": activeContext?.courseName ?? "", "matching": matching, "focusRequested": browserFocusRequested && matching,
-                    "auto": autoSend && matching, "review": deliveries.contains { $0.lessonID == catalog.activeLessonID && [.uncertain, .failed].contains($0.state) },
+                    "lesson": targetDisplayName, "matching": matching, "focusRequested": browserFocusRequested, "targetURL": deliveryTarget == "chrome" ? boundChat : "", "section": targetSection?.id.uuidString ?? "",
+                    "auto": autoSend && matching, "review": deliveries.contains { matchesTarget($0.lessonID) && [.uncertain, .failed].contains($0.state) },
                     "hasPrompt": matching && pendingPromptToSend != nil && pendingPromptLesson == catalog.activeLessonID && promptInFlight == nil,
-                    "queued": deliveries.filter { $0.lessonID == catalog.activeLessonID && $0.state == .queued }.count,
+                    "queued": deliveries.filter { matchesTarget($0.lessonID) && $0.state == .queued }.count,
                     "report": deliveryReport]
         }
 
@@ -857,18 +1002,19 @@ final class WorkspaceModel: ObservableObject {
         if kind == "bind" {
             guard let url = message["url"] as? String, ChatURL.isConversation(url),
                   let tab = message["tab"] as? Int, let lesson = catalog.activeLessonID else {
-                return ["ok": false, "error": "先在 Mac 开始课堂，并在 Chrome 打开具体的 ChatGPT 对话。"]
+                return ["ok": false, "error": "先在 Mac 选择 Section，并在 Chrome 打开具体的 ChatGPT 对话。"]
             }
             guard promptInFlight == nil, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
                 return ["ok": false, "error": "请等待当前照片投递完成后再绑定。"]
             }
             browserPageStatus = ""; autoSend = false; boundLesson = lesson; boundChat = url; browserTab = tab; boundDestination = "chrome"; deliveryTarget = "chrome"
+            if var section = targetSection { section.chatURL = url; try? store?.updateSection(section); catalog = store?.catalog ?? catalog }
             deliveryReport = "已绑定 ChatGPT 聊天：\(url)"
             showAlert(title: "Chrome 聊天绑定成功", message: "当前课堂已成功绑定至 Chrome 标签页。", style: .success)
             if autoSendPromptOnStartLesson {
-                triggerAutoPromptOnLessonStart()
+                queuePrompt(classStartPrompt, summary: false)
             }
-            return ["ok": true, "lesson": activeContext?.courseName ?? "", "chat": url]
+            return ["ok": true, "lesson": targetDisplayName, "chat": url]
         }
 
         if kind == "poll" {
@@ -876,11 +1022,11 @@ final class WorkspaceModel: ObservableObject {
                   message["url"] as? String == boundChat, boundLesson == catalog.activeLessonID else {
                 return ["ok": true, "paused": true, "message": "等待绑定课堂并在 Mac 开启自动发送"]
             }
-            guard !deliveries.contains(where: { [.preparing, .submitting, .uncertain, .failed].contains($0.state) && $0.lessonID == boundLesson }) else {
+            guard !deliveries.contains(where: { [.preparing, .submitting, .uncertain, .failed].contains($0.state) && matchesTarget($0.lessonID) }) else {
                 return ["ok": true, "paused": true, "message": "正在投递或等待异常核对"]
             }
             guard promptInFlight == nil else { return ["ok": true, "paused": true, "message": "正在发送提示词"] }
-            let hasQueuedPhotos = deliveries.contains { $0.state == .queued && $0.lessonID == boundLesson && $0.destination == "chrome" }
+            let hasQueuedPhotos = deliveries.contains { $0.state == .queued && matchesTarget($0.lessonID) && $0.destination == "chrome" }
             if let prompt = pendingPromptToSend, pendingPromptLesson == boundLesson,
                !pendingPromptIsSummary || !hasQueuedPhotos {
                 let id = pendingPromptID
@@ -897,8 +1043,12 @@ final class WorkspaceModel: ObservableObject {
                 }
                 return ["ok": true, "kind": "prompt", "id": id.uuidString, "text": prompt]
             }
-            guard let entry = deliveries.first(where: { $0.state == .queued && $0.lessonID == boundLesson && $0.destination == "chrome" }),
+            guard let entry = deliveries.first(where: { $0.state == .queued && matchesTarget($0.lessonID) && $0.destination == "chrome" }),
                   let photo = records.first(where: { $0.id == entry.id }), let url = imageURL(photo) else { return ["ok": true, "idle": true] }
+            guard photo.sessionID == entry.lessonID else {
+                autoSend = false; deliveryReport = "照片归档与投递目标不一致，请重新打开 SnapSend 修复后再开启发送。"
+                return ["ok": false, "error": deliveryReport]
+            }
             do {
                 let data = try browserJPEG(url)
                 try changeDelivery(entry.id, .preparing, "正在上传至 Chrome")
@@ -922,7 +1072,7 @@ final class WorkspaceModel: ObservableObject {
         if kind == "result" || kind == "submitting" {
             guard message["tab"] as? Int == browserTab, message["url"] as? String == boundChat,
                   let text = message["id"] as? String, let id = UUID(uuidString: text),
-                  let entry = deliveries.first(where: { $0.id == id }), entry.lessonID == boundLesson else { return ["ok": false, "error": "投递绑定不匹配"] }
+                  let entry = deliveries.first(where: { $0.id == id }), matchesTarget(entry.lessonID) else { return ["ok": false, "error": "投递绑定不匹配"] }
             do {
                 if kind == "submitting" {
                     guard autoSend, boundLesson == catalog.activeLessonID else { return ["ok": false, "error": "发送已暂停。"] }
@@ -940,6 +1090,7 @@ final class WorkspaceModel: ObservableObject {
                         }
                     } else {
                         deliveryReport = "照片已成功发送至 ChatGPT。"
+                        resolveTarget()
                     }
                 }
                 return ["ok": true]
@@ -1101,7 +1252,7 @@ final class WorkspaceModel: ObservableObject {
             showAlert(title: "未绑定 AI 聊天", message: "请先绑定当前课堂的 AI 对话。", style: .warning)
             return
         }
-        guard lessonID == boundLesson else {
+        guard matchesTarget(lessonID) else {
             showAlert(title: "照片属于其他课堂", message: "请先打开照片所属课堂并绑定它的聊天。", style: .warning)
             return
         }
@@ -1231,362 +1382,3 @@ final class WorkspaceModel: ObservableObject {
 }
 
 // MARK: - Redesigned Liquid Glass Workspace UI
-
-struct PhotoGridCard: View {
-    let photo: PhotoRecord
-    let imageURL: URL?
-    let isSelected: Bool
-    let isSelectMode: Bool
-    let isChecked: Bool
-    let stage: DeliveryState?
-    let onSelect: () -> Void
-    let onSendToAI: () -> Void
-    @State private var hover = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private var badge: (String, Color) {
-        switch stage {
-        case .sent: return ("已发送", SnapTheme.blue)
-        case .preparing, .submitting: return ("发送中", SnapTheme.violet)
-        case .queued: return ("排队中", .secondary)
-        case .uncertain, .failed: return ("需要核对", .orange)
-        case nil: return ("Mac 已保存", .secondary)
-        }
-    }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button(action: onSelect) {
-                ZStack(alignment: .topLeading) {
-                    Group {
-                        if let imageURL { MacThumbnail(url: imageURL) }
-                        else { Rectangle().fill(.quaternary).overlay { Image(systemName: "photo") } }
-                    }.frame(height: 165).frame(maxWidth: .infinity).clipped().clipShape(RoundedRectangle(cornerRadius: 17))
-                    if isSelectMode {
-                        Image(systemName: isChecked ? "checkmark.circle.fill" : "circle").font(.title2).foregroundStyle(isChecked ? SnapTheme.blue : Color.white).padding(10).shadow(radius: 3)
-                    }
-                }
-            }.buttonStyle(.plain).accessibilityLabel("查看 \(photo.receivedAt.formatted()) 的照片")
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(photo.receivedAt, style: .time).font(.callout.monospacedDigit().weight(.medium))
-                    Label(badge.0, systemImage: stage == .sent ? "checkmark.circle.fill" : stage == .uncertain || stage == .failed ? "exclamationmark.circle" : "circle.fill").font(.caption).foregroundStyle(badge.1)
-                }
-                Spacer()
-                if !isSelectMode {
-                    Button(action: onSendToAI) { Image(systemName: "paperplane").padding(9) }.buttonStyle(.plain).foregroundStyle(SnapTheme.blue).background(SnapTheme.blue.opacity(0.08), in: Circle()).help("发送这张照片给 AI")
-                }
-            }
-        }.padding(12).modifier(SnapSurface(radius: 23))
-            .overlay(RoundedRectangle(cornerRadius: 23).stroke(isChecked || isSelected ? SnapTheme.blue : Color.clear, lineWidth: 2))
-            .offset(y: hover && !reduceMotion ? -2 : 0)
-            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: hover)
-            .onHover { hover = $0 }
-    }
-}
-
-// MARK: - Floating Capsule Bar (Liquid Glass Dock for Batch Operations)
-
-struct FloatingCapsuleBar: View {
-    let selectedCount: Int
-    let totalCount: Int
-    let onSelectAll: () -> Void
-    let onDeselectAll: () -> Void
-    let onSendToAI: () -> Void
-    let onExport: () -> Void
-    let onDelete: () -> Void
-    let onClose: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(SnapTheme.blue)
-                Text("已选 \(selectedCount) / \(totalCount) 张")
-                    .font(.callout.weight(.semibold))
-            }
-            .padding(.leading, 6)
-
-            Divider().frame(height: 18)
-
-            if selectedCount < totalCount {
-                Button("全选") { onSelectAll() }
-                    .buttonStyle(.borderless)
-                    .font(.caption.weight(.medium))
-            } else {
-                Button("取消全选") { onDeselectAll() }
-                    .buttonStyle(.borderless)
-                    .font(.caption.weight(.medium))
-            }
-
-            Divider().frame(height: 18)
-
-            Button {
-                onSendToAI()
-            } label: {
-                Label("批量发送 AI", systemImage: "paperplane.fill")
-                    .font(.caption.weight(.bold))
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(SnapTheme.blue)
-            .controlSize(.small)
-            .disabled(selectedCount == 0)
-
-            Button {
-                onExport()
-            } label: {
-                Label("导出原图", systemImage: "square.and.arrow.up")
-                    .font(.caption)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(selectedCount == 0)
-
-            Button(role: .destructive) {
-                onDelete()
-            } label: {
-                Label("删除", systemImage: "trash")
-                    .font(.caption)
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
-            .controlSize(.small)
-            .disabled(selectedCount == 0)
-
-            Divider().frame(height: 18)
-
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 4)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule().stroke(
-                LinearGradient(
-                    colors: [Color.white.opacity(0.4), Color.white.opacity(0.1)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
-        )
-        .shadow(color: Color.black.opacity(0.2), radius: 14, x: 0, y: 6)
-    }
-}
-
-// MARK: - Photo Inspector Panel (with Direct AI Send & Pipeline Tracking)
-
-struct PhotoInspectorPanel: View {
-    @ObservedObject var model: WorkspaceModel
-    let photo: PhotoRecord
-    let url: URL
-    let onClose: () -> Void
-
-    private var deliveryEntry: DeliveryEntry? {
-        model.deliveries.first { $0.id == photo.id }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Header with Close Button
-                HStack {
-                    Text("照片详情与操作")
-                        .font(.headline.weight(.bold))
-                    Spacer()
-                    Button {
-                        onClose()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Large High-Res Image Preview
-                MacThumbnail(url: url, pixels: 1600, fit: true)
-                    .frame(height: 250).frame(maxWidth: .infinity)
-                    .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
-
-                // Prominent Direct AI Send Button (User Request ③)
-                Button {
-                    model.sendSinglePhotoToAI(photo)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "paperplane.fill")
-                        Text("发送此照片给 AI")
-                            .fontWeight(.bold)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(SnapTheme.blue)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .shadow(color: SnapTheme.blue.opacity(0.3), radius: 6, x: 0, y: 2)
-
-                // Info Meta
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("拍摄时间：")
-                            .foregroundStyle(.secondary)
-                        Text(photo.receivedAt.formatted(date: .abbreviated, time: .standard))
-                            .fontWeight(.medium)
-                    }
-                    .font(.caption)
-
-                    HStack {
-                        Text("文件大小：")
-                            .foregroundStyle(.secondary)
-                        Text(ByteCountFormatter.string(fromByteCount: Int64(photo.byteCount), countStyle: .file))
-                            .fontWeight(.medium)
-                    }
-                    .font(.caption)
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                Divider()
-
-                // Full Delivery Pipeline Flow Tracker
-                GroupBox("全链路流转状态") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        PipelineStepRow(
-                            step: "1. 手机拍照确认",
-                            status: "已完成",
-                            icon: "checkmark.circle.fill",
-                            color: .green
-                        )
-
-                        PipelineStepRow(
-                            step: "2. USB 传输与 Mac 归档",
-                            status: "已入库",
-                            icon: "checkmark.circle.fill",
-                            color: .green
-                        )
-
-                        let stage = deliveryEntry?.state
-                        let prepIcon = (stage == .preparing || stage == .submitting || stage == .sent) ? "checkmark.circle.fill" : (stage == .queued ? "arrow.triangle.2.circlepath" : "circle")
-                        let prepColor: Color = (stage == .preparing || stage == .submitting || stage == .sent) ? .green : (stage == .queued ? .blue : .secondary)
-
-                        PipelineStepRow(
-                            step: "3. AI 副本生成与排队",
-                            status: stage == .queued ? "排队中" : (stage != nil ? "已就绪" : "未排队"),
-                            icon: prepIcon,
-                            color: prepColor
-                        )
-
-                        let sentIcon = stage == .sent ? "checkmark.circle.fill" : (stage == .uncertain ? "exclamationmark.triangle.fill" : (stage == .submitting ? "arrow.triangle.2.circlepath" : "circle"))
-                        let sentColor: Color = stage == .sent ? .green : (stage == .uncertain ? .orange : (stage == .submitting ? .blue : .secondary))
-
-                        PipelineStepRow(
-                            step: "4. ChatGPT 投递与回执",
-                            status: stage == .sent ? "聊天中已出现图片消息" : (stage == .uncertain ? "待人工核对" : (stage == .submitting ? "正在发送" : "尚未投递")),
-                            icon: sentIcon,
-                            color: sentColor
-                        )
-                    }
-                    .padding(6)
-                }
-
-                // Review Action Controls (if uncertain / failed)
-                if let entry = deliveryEntry, [.uncertain, .failed].contains(entry.state) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("投递结果需在 AI 界面核对：")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.orange)
-                        HStack {
-                            Button("AI 已收到", systemImage: "checkmark.circle") {
-                                model.resolveCurrent(sent: true)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(SnapTheme.blue)
-                            .controlSize(.small)
-
-                            Button("未发送 · 重新排队", systemImage: "arrow.clockwise") {
-                                model.resolveCurrent(sent: false)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                    .padding(10)
-                    .background(Color.orange.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-
-                Divider()
-
-                // Operational Buttons
-                HStack {
-                    Button("复制图片", systemImage: "doc.on.doc") {
-                        model.copyImage()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button("访达中显示", systemImage: "arrow.up.right.square") {
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-            .padding(16)
-        }
-        .background(.ultraThinMaterial)
-    }
-}
-
-// MARK: - Pipeline Step Row
-
-struct PipelineStepRow: View {
-    let step: String
-    let status: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .font(.callout)
-            Text(step)
-                .font(.callout)
-            Spacer()
-            Text(status)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(color)
-        }
-    }
-}
-
-// MARK: - Mac Thumbnail Loader
-
-struct MacThumbnail: View {
-    let url: URL
-    var pixels: Int = 480
-    var fit = false
-    @State private var image: NSImage?
-    var body: some View {
-        Group {
-            if let image {
-                if fit { Image(nsImage: image).resizable().scaledToFit() }
-                else { Image(nsImage: image).resizable().scaledToFill() }
-            } else { Rectangle().fill(.quaternary).overlay { Image(systemName: "photo").foregroundStyle(.secondary) } }
-        }.task(id: url) {
-            let cg = await ThumbnailLoader.shared.load(url, pixels: pixels)
-            guard !Task.isCancelled else { return }
-            image = cg.map { NSImage(cgImage: $0, size: .zero) }
-        }.onDisappear { image = nil }
-    }
-}

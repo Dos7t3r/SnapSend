@@ -42,6 +42,26 @@ function native(message) {
   });
   const result = chain.then(run, run); chain = result.catch(() => {}); return result;
 }
+// Only restore an exact URL supplied by the Mac's saved Section. Never infer another chat.
+async function restoreTarget(mac, focus = false) {
+  let url;
+  try { url = new URL(mac.targetURL); } catch { return null; }
+  if (!isConversationURL(url) || !mac.section) return null;
+  const tabs = await chrome.tabs.query({url:'https://chatgpt.com/*'});
+  let tab = tabs.find(t => t.url === mac.targetURL);
+  if (!tab && focus) tab = await chrome.tabs.create({url:mac.targetURL,active:true});
+  if (!tab) return null;
+  const next = {tab:tab.id,url:mac.targetURL};
+  const result = await native({kind:'restore',section:mac.section,...next});
+  if (!result.ok) return null;
+  binding = next; nextCheck = 0; scheduleTick(3000);
+  if (focus) {
+    await chrome.tabs.update(tab.id,{active:true});
+    await chrome.windows.update(tab.windowId,{focused:true});
+    await native({kind:'focusResult',...next});
+  }
+  return next;
+}
 async function tick() {
   if (busy || !binding || Date.now() < nextCheck) return;
   busy = true;
@@ -49,9 +69,13 @@ async function tick() {
   let interval = 3000;
   const bound = binding;
   try {
-    const mac = await native({kind:'status',...bound});
+    let mac = await native({kind:'status',...bound});
     if (!mac.ok) throw new Error(mac.error);
-    if (mac.focusRequested) {
+    if (mac.targetURL && (!mac.matching || mac.focusRequested)) {
+      const restored = await restoreTarget(mac, !!mac.focusRequested);
+      if (restored) { interval = 3000; return; }
+    }
+    if (mac.focusRequested && !mac.targetURL) {
       const target = await chrome.tabs.get(bound.tab);
       if (target.url === bound.url) {
         await chrome.tabs.update(bound.tab, {active:true});
@@ -128,13 +152,17 @@ async function snapshot() {
     return view;
   };
   try {
-    const mac = await native({kind:'status', ...(binding || {})});
+    let mac = await native({kind:'status', ...(binding || {})});
     if (!mac.ok) throw new Error(mac.error);
     if (!mac.version || mac.version < 3) throw new Error('Mac 仍是旧版：请退出 SnapSend，再打开本次更新的版本');
     add('Mac 应用',true,'本机桥接已连接');
-    add('当前课堂',!!mac.lesson,mac.lesson || '尚未开始课堂');
+    add('当前 Section',!!mac.lesson,mac.lesson || '未选择，照片保存在收件箱');
     add('USB 手机',!!mac.usb,mac.usb ? '已连接' : '未连接，拍照前请连接');
-    if (!mac.lesson) { view.title='先开始一节课';view.next='在 Mac 左侧新建课程，或选择课程并开始新一节课。然后点重新检查。';return finish(); }
+    if (!mac.lesson) { view.title='选择一个 Section';view.next='Mac 已能保存照片。需要发送时，在 Mac 课程页选择 Section；未选择的照片进入收件箱。然后重新检查。';return finish(); }
+    if (mac.targetURL && (!mac.matching || mac.focusRequested)) {
+      const restored = await restoreTarget(mac, !!mac.focusRequested);
+      if (restored) mac = await native({kind:'status',...restored});
+    }
     const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
     const url = new URL(tab?.url || 'about:blank');
     const valid = isConversationURL(url);
@@ -148,10 +176,11 @@ async function snapshot() {
       view.action='refresh';return finish();
     }
     const matched = !!binding && binding.tab === tab.id && binding.url === tab.url && mac.matching;
-    add('聊天绑定',matched,matched ? '此标签页已绑定当前课堂' : '尚未绑定此课堂与聊天');
+    add('聊天绑定',matched,matched ? '此标签页已绑定当前 Section' : '尚未绑定此 Section 与聊天');
     add('自动发送',mac.auto === true,mac.auto ? '已开启' : '已暂停');
     view.lesson=mac.lesson;view.queue=mac.queued;view.chat=tab.title || 'ChatGPT';view.url=tab.url;
-    if (!matched) { view.title='下一步：绑定此聊天';view.next='确认这是本节课专用聊天，点击绑定。绑定后将按 Mac 设置发送开课提示词并开启投递，请先确认聊天正确。';view.action='bind';return finish(); }
+    if (!matched && mac.targetURL && tab.url !== mac.targetURL) { view.title='打开已保存的 Section 聊天';view.next='当前网页是另一条聊天。打开已保存的目标，确认状态后再开启发送。';view.action='focus';return finish(); }
+    if (!matched) { view.title='下一步：绑定此聊天';view.next='确认这是当前 Section 的专用聊天，点击绑定。绑定只保存目标；之后由你开启自动发送。';view.action='bind';return finish(); }
     if (mac.review) { view.state='error';view.title='有照片需要核对';view.next='在 Mac 选中待核对照片，到 ChatGPT 确认是否收到；处理后刷新聊天页。';view.action='refresh';return finish(); }
     if (!mac.auto) { view.title='已绑定，尚未开启发送';view.next='点击开启自动发送。随后关闭此面板，手机拍照确认即可。';view.action='enable';return finish(); }
     if (busy) { view.state='working';view.title='正在投递照片';view.next='关闭此面板即可，聊天标签页保持打开。'+status;view.action='pause';return finish(); }
@@ -180,6 +209,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     })().catch(error=>respond({ok:false,status:error.message}));
     return true;
   }
+  if (message.kind === 'focus') {
+    (async () => {
+      await native({kind:'requestFocus',...(binding || {})});
+      const mac = await native({kind:'status',...(binding || {})});
+      if (!await restoreTarget(mac,true)) throw new Error('无法恢复保存的聊天，请在 Mac 检查 Section 链接');
+      respond({ok:true,view:await snapshot()});
+    })().catch(error=>respond({ok:false,status:error.message}));
+    return true;
+  }
   if (message.kind === 'bind') {
     (async () => {
       if (busy) throw new Error('当前正在投递，请等照片完成后再绑定');
@@ -197,7 +235,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
 });
-// connectNative keeps the MV3 worker alive. Disconnect/restart intentionally requires rebinding.
+// connectNative keeps the MV3 worker alive. A popup can recover the saved Section URL after restart.
 function scheduleTick(delay) {
   clearTimeout(wakeTimer);
   wakeTimer = setTimeout(async () => {

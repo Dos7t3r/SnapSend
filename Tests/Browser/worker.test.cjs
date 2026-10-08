@@ -138,3 +138,23 @@ test('focus is restored only on an explicit Mac request',async()=>{
   const s=setup({queued:0,native:r=>r.kind==='status'?{ok:true,version:4,lesson:'数学',matching:true,auto:true,queued:0,focusRequested:true}:null});
   await s.bind();await s.tick();assert.equal(s.windowUpdates(),1);assert.equal(s.requests.some(r=>r.kind==='focusResult'),true);
 });
+test('popup recovers the Mac saved Section chat without asking to bind again', async()=>{
+  let restored=false;
+  const s=setup({auto:false,native:r=>{
+    if(r.kind==='restore'){restored=true;return {ok:true};}
+    if(r.kind==='status')return {ok:true,version:4,lesson:'STA256 · LEC0101',targetURL:'https://chatgpt.com/c/class',section:'section-a',usb:true,matching:restored,auto:false,queued:0};
+  }});
+  const result=await s.message({kind:'status'});
+  assert.equal(result.view.action,'enable');
+  assert.equal(s.requests.some(r=>r.kind==='restore' && r.section==='section-a'),true);
+  assert.equal(s.windowUpdates(),0);
+});
+test('saved Section restoration focuses only after an explicit focus request', async()=>{
+  let changed=false;
+  const s=setup({auto:false,native:r=>r.kind==='status'?{ok:true,version:4,lesson:'STA256',targetURL:changed?'https://chatgpt.com/c/section-b':'',section:'section-b',matching:!changed,focusRequested:changed,auto:false,queued:0,usb:true}:null});
+  await s.bind(); changed=true; s.tab.url='https://chatgpt.com/c/section-b';
+  await s.tick();
+  assert.equal(s.requests.some(r=>r.kind==='restore' && r.url==='https://chatgpt.com/c/section-b'),true);
+  assert.equal(s.windowUpdates(),1);
+  assert.equal(s.requests.some(r=>r.kind==='poll'),false);
+});
