@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="popup.css"><body>
+<header><img class="icon" src="icons/128.png" alt="SnapSend"><div><h1>SnapSend</h1><small>你的课堂照片，直达 AI</small></div><button id="check" class="icon-button" title="重新检查连接">↻</button></header>
+<section id="hero" class="hero setup" role="status" aria-live="polite"><div class="eyebrow" id="state">检查中</div><h2 id="title">正在检查 Mac 与聊天页面…</h2><p id="next">稍等，马上告诉你下一步。</p></section>
+<section class="checks" id="checks"></section>
+<button id="primary">重新检查</button><p id="feedback" role="alert" hidden></p>
+<details><summary>首次使用 / 遇到问题</summary><ol><li>Mac 开始课堂，并安装浏览器桥接。</li><li>打开本课专用的 ChatGPT 聊天。绑定后会按 Mac 设置发送开课提示词。</li><li>新装或更新扩展后，刷新聊天页面。</li><li>确认课程与聊天正确，再绑定；未开启时点开启自动发送。</li><li>关闭这个面板，保持聊天标签页打开，手机拍照确认。</li></ol><p>若已有草稿或 AI 正在回答，会等待。发送不确定时请在 Mac 核对，避免重复发送。</p></details>
+<footer>照片先通过 USB 保存在 Mac，再由此聊天上传 AI。切换课堂或重启应用后需要重新绑定。</footer>
+<script src="popup.js"></script></body></html>

@@ -1,0 +1,20 @@
+.build/
+build/
+.DS_Store
+*.xcuserstate
+xcuserdata/
+
+# Local signing, credentials, generated releases and user archives
+dist/
+Signing.local.xcconfig
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.p8
+*.cer
+*.key
+.env
+.env.*
+!.env.example
+*.ipa
+*.dSYM/
