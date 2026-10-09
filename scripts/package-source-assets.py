@@ -25,7 +25,10 @@ with zipfile.ZipFile(output / 'SnapSend-Chrome-Extension.zip', 'w', zipfile.ZIP_
         if public_file(path):
             archive.write(path, 'SnapSend-Chrome-Extension/' + str(path.relative_to(root / 'chrome-extension')))
     archive.write(root / 'LICENSE', 'SnapSend-Chrome-Extension/LICENSE')
-    archive.write(root / 'downloads/README.md', 'SnapSend-Chrome-Extension/INSTALL.md')
+    archive.writestr('SnapSend-Chrome-Extension/INSTALL.md',
+                     '# 当前扩展包\n\n版本：' + manifest['version'] +
+                     '。请配合对应 Mac 开发版；下方公开下载链接可能仍指向上一稳定版本。\n\n' +
+                     (root / 'downloads/README.md').read_text())
 
 with zipfile.ZipFile(output / 'SnapSend-iOS-Source.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
     for directory in ['iOS', 'Sources/SnapSendCore']:
@@ -39,7 +42,16 @@ with zipfile.ZipFile(output / 'SnapSend-iOS-Source.zip', 'w', zipfile.ZIP_DEFLAT
         add(archive, path, 'SnapSend-iOS-Source')
     add(archive, root / 'assets/screenshots/mac-workspace.png', 'SnapSend-iOS-Source')
 
-names = ['SnapSend-Mac-arm64.zip', 'SnapSend-Chrome-Extension.zip', 'SnapSend-iOS-Source.zip']
+with zipfile.ZipFile(output / 'SnapSend-iPad-Source.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+    for directory in ['iPad', 'Sources/SnapSendCore']:
+        for path in sorted((root / directory).rglob('*')):
+            add(archive, path, 'SnapSend-iPad-Source')
+    for file in ['iOS/Signing.xcconfig', 'iOS/Signing.local.xcconfig.example', 'Sources/SnapSend/SnapTheme.swift', 'README.md', 'LICENSE', 'CHANGELOG.md']:
+        add(archive, root / file, 'SnapSend-iPad-Source')
+    for path in sorted((root / 'docs').rglob('*')):
+        add(archive, path, 'SnapSend-iPad-Source')
+
+names = ['SnapSend-Mac-arm64.zip', 'SnapSend-Chrome-Extension.zip', 'SnapSend-iOS-Source.zip', 'SnapSend-iPad-Source.zip']
 checksums = []
 for name in names:
     path = output / name

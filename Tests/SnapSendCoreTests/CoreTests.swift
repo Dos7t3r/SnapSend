@@ -3,6 +3,27 @@ import CryptoKit
 @testable import SnapSendCore
 
 final class CoreTests: XCTestCase {
+    func testCancelTasksRetainsExclusionAndDoesNotDiscardActiveOrSentReceipts() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let ledger = try DeliveryLedger(directory:folder), lesson = UUID(), queued = UUID(), active = UUID()
+        try ledger.enqueue(id:queued,lessonID:lesson,destination:"chrome")
+        try ledger.enqueue(id:active,lessonID:lesson,destination:"chrome")
+        try ledger.transition(id:active,state:.preparing,detail:"upload")
+        XCTAssertThrowsError(try ledger.cancel(ids:[queued,active]))
+        XCTAssertEqual(ledger.entries.first { $0.id == queued }?.state,.queued)
+        try ledger.cancel(ids:[queued]); XCTAssertEqual(ledger.entries.first { $0.id == queued }?.state,.held)
+        try ledger.transition(id:active,state:.queued,detail:"no attachment was attempted")
+        try ledger.transition(id:active,state:.preparing,detail:"upload")
+        try ledger.transition(id:active,state:.submitting,detail:"click")
+        try ledger.transition(id:active,state:.sent,detail:"receipt")
+        XCTAssertThrowsError(try ledger.cancel(ids:[active]))
+        let restored = try DeliveryLedger(directory:folder)
+        XCTAssertEqual(restored.entries.first { $0.id == queued }?.state,.held)
+        XCTAssertEqual(restored.entries.first { $0.id == active }?.state,.sent)
+    }
+
     func testPNGOriginalExtensionSurvivesMoveReloadAndDuplicateReceipt() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -200,7 +221,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testPhotoStageTrackingAndPersistence() throws {
-        XCTAssertEqual(SnapSendVersion, "0.6.0")
+        XCTAssertEqual(SnapSendVersion, "0.6.2")
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
         let library = try PhoneLibrary(directory: dir)

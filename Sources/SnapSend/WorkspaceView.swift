@@ -3,9 +3,9 @@ import AppKit
 import SnapSendCore
 
 enum WorkspacePage: String, CaseIterable {
-    case overview = "概览", courses = "课程", inbox = "收件箱", settings = "设置"
-    var symbol: String { switch self { case .overview: "square.grid.2x2.fill"; case .courses: "folder.fill"; case .inbox: "tray.fill"; case .settings: "slider.horizontal.3" } }
-    var color: Color { switch self { case .overview: Aurora.Colors.blue; case .courses: Aurora.Colors.target; case .inbox: Aurora.Colors.phone; case .settings: Aurora.Colors.bridge } }
+    case overview = "概览", courses = "课程", inbox = "收件箱", tasks = "发送任务", settings = "设置"
+    var symbol: String { switch self { case .overview: "square.grid.2x2.fill"; case .courses: "folder.fill"; case .inbox: "tray.fill"; case .tasks: "paperplane.fill"; case .settings: "slider.horizontal.3" } }
+    var color: Color { switch self { case .overview: Aurora.Colors.blue; case .courses: Aurora.Colors.target; case .inbox: Aurora.Colors.phone; case .tasks: Aurora.Colors.bridge; case .settings: Aurora.Colors.bridge } }
 }
 struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
@@ -31,9 +31,10 @@ struct WorkspaceView: View {
                         switch page {
                         case .overview:
                             if showingHistory { HistoryScreen(model: model, openPhoto: openPhoto, back: { showingHistory = false }) }
-                            else { OverviewScreen(model: model, configure: { page = .settings }, changeTarget: { targetPicker = true }, openPhoto: openPhoto, showHistory: { showingHistory = true }) }
+                            else { OverviewScreen(model: model, configure: { page = .settings }, changeTarget: { targetPicker = true }, openPhoto: openPhoto, showHistory: { page = .tasks }) }
                         case .courses: CoursesScreen(model: model, openPhoto: openPhoto)
                         case .inbox: InboxScreen(model: model, openPhoto: openPhoto)
+                        case .tasks: HistoryScreen(model: model, openPhoto: openPhoto, back: { page = .overview })
                         case .settings: SettingsScreen(model: model)
                         }
                     }.id(page.rawValue + String(showingHistory)).transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: Aurora.Motion.pageIn)), removal: .opacity.combined(with: .offset(y: Aurora.Motion.pageOut))))
@@ -72,7 +73,7 @@ struct WorkspaceView: View {
             Button { page = .settings } label: {
                 HStack(spacing: Aurora.Space.small) {
                     Circle().fill(model.usbConnected ? Aurora.Colors.success : Aurora.Colors.queued).frame(width: Aurora.Space.small, height: Aurora.Space.small)
-                    VStack(alignment: .leading, spacing: Aurora.Space.tiny) { Text(model.usbConnected ? "iPhone · USB 已连接" : "iPhone · 等待连接").font(Aurora.TypeStyle.caption); Text("连接与配对").font(Aurora.TypeStyle.micro).foregroundStyle(Aurora.Colors.secondary) }
+                    VStack(alignment: .leading, spacing: Aurora.Space.tiny) { Text((model.usbMode == "pad" ? "iPad" : "iPhone") + (model.usbConnected ? " · USB 已连接" : " · 等待连接")).font(Aurora.TypeStyle.caption); Text("连接与配对").font(Aurora.TypeStyle.micro).foregroundStyle(Aurora.Colors.secondary) }
                 }.padding(Aurora.Space.inset).frame(maxWidth: .infinity, alignment: .leading).background(Aurora.Colors.white.opacity(Aurora.Alpha.hover), in: Capsule())
             }.buttonStyle(PressableStyle(radius: 40, row: true))
         }.padding(Aurora.Space.card) }.glassCard(cornerRadius: Aurora.Space.sidebarRadius)
@@ -99,7 +100,7 @@ struct WorkspaceView: View {
                 } }
             }.padding(Aurora.Space.page).frame(width: Aurora.Space.preview, height: Aurora.Space.previewHeight).preferredColorScheme(.dark)
                 .confirmationDialog("删除 Mac 中的这张原图？", isPresented: $deletingPhoto) {
-                    Button("删除 Mac 原图", role: .destructive) { model.selectedPhotoIDs = [photo.id]; model.batchDeleteSelected(); preview = nil }
+                    Button("删除 Mac 原图", role: .destructive) { model.selectedPhotoIDs = [photo.id]; if model.batchDeleteSelected() { preview = nil } }
                 } message: { Text("这会删除 Mac 归档；手机上的照片保留。") }
         }
     }

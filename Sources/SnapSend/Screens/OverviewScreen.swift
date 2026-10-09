@@ -20,7 +20,7 @@ struct OverviewScreen: View {
     }
     private var headline: String {
         if !problems.isEmpty { return "需要处理" }
-        if !model.usbConnected { return "等待连接 iPhone" }
+        if !model.usbConnected { return model.usbMode == "pad" ? "等待连接 iPad" : "等待连接 iPhone" }
         if !model.chatMatchesClass { return "可以拍照 · 等待绑定聊天" }
         if model.autoSend && waitingForChat { return "等待聊天就绪" }
         return model.autoSend ? "就绪" : "可以拍照 · 自动发送已暂停"
@@ -64,6 +64,9 @@ struct OverviewScreen: View {
     private var sendCard: some View {
         VStack(alignment: .leading, spacing: Aurora.Space.small) {
             Toggle("自动发送", isOn: Binding(get: { model.autoSend }, set: { $0 ? model.enableDelivery() : model.pauseDelivery() })).font(Aurora.TypeStyle.heading).toggleStyle(SpringToggle())
+            if !model.autoSend && model.deliveries.contains(where: { $0.state == .queued && model.matchesTarget($0.lessonID) }) {
+                Button("恢复队列与自动发送") { model.resumeDelivery() }.buttonStyle(AuroraInlineButton())
+            }
             Text(model.autoSend ? "等待照片，按顺序发送" : "照片会继续保存").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary)
             Button(model.browserPageStatus.isEmpty ? "查看绑定聊天" : "打开聊天处理") { model.requestBrowserFocus() }.buttonStyle(PressableStyle(inset: Aurora.Space.tiny)).font(Aurora.TypeStyle.micro).disabled(!model.chatMatchesClass)
         }.padding(Aurora.Space.card).frame(maxWidth: .infinity, alignment: .leading).glassCard().cardEntrance(4)
@@ -93,26 +96,36 @@ struct HistoryScreen: View {
     var openPhoto: (PhotoRecord) -> Void
     var back: () -> Void
     @State private var filter = "全部"
+    @State private var cancellingQueue = false
     @Namespace private var selection
     @Environment(\.auroraReduceMotion) private var reduceMotion
-    private var photos: [PhotoRecord] { Array(model.records.reversed()).filter { filter == "全部" || (filter == "已发送" ? model.stageOf($0) == .sent : [.failed, .uncertain].contains(model.stageOf($0))) } }
+    private var photos: [PhotoRecord] { Array(model.records.reversed()).filter { filter == "全部" || (filter == "已发送" ? model.stageOf($0) == .sent : filter == "待发送" ? [.queued,.preparing,.submitting].contains(model.stageOf($0)) : [.failed, .uncertain].contains(model.stageOf($0))) } }
     var body: some View {
-        VStack(alignment: .leading, spacing: Aurora.Space.gap) {
-            HStack { Button("返回概览", systemImage: "arrow.left", action: back).auroraButton(); Text("全部发送记录").font(Aurora.TypeStyle.title).lineLimit(1); Spacer() }.padding(.trailing, Aurora.Space.page)
+        ScrollView {
+          VStack(alignment: .leading, spacing: Aurora.Space.gap) {
+            HStack { Button("返回概览", systemImage: "arrow.left", action: back).auroraButton(); Text("发送任务与照片").font(Aurora.TypeStyle.title).lineLimit(1); Spacer() }.padding(.trailing, Aurora.Space.page)
             HStack {
-                ForEach(["全部", "已发送", "待处理"], id: \.self) { item in
+                ForEach(["全部", "待发送", "已发送", "待处理"], id: \.self) { item in
                     Button { withAnimation(reduceMotion ? Aurora.Motion.fade : Aurora.Motion.state) { filter = item } } label: {
                         Text(item).frame(maxWidth: .infinity, alignment: .leading).padding(Aurora.Space.small)
                             .background { if filter == item { RoundedRectangle(cornerRadius: Aurora.Space.rowRadius).fill(Aurora.Colors.selected).matchedGeometryEffect(id: "filter", in: selection).allowsHitTesting(false) } }
                     }.buttonStyle(PressableStyle(row: true))
                 }
             }.padding(.trailing, Aurora.Space.page)
-            ScrollView {
+            HStack {
+                Button("恢复当前队列与自动发送") { model.resumeDelivery() }.buttonStyle(AuroraInlineButton()).disabled(!model.chatMatchesClass || model.deliveries.contains { [.preparing,.submitting,.uncertain,.failed].contains($0.state) && model.matchesTarget($0.lessonID) })
+                Button("取消当前课堂待发任务") { cancellingQueue = true }.buttonStyle(AuroraInlineButton()).disabled(!model.deliveries.contains { model.matchesTarget($0.lessonID) && [.queued,.failed,.uncertain].contains($0.state) })
+                Button("暂停发送") { model.pauseDelivery() }.buttonStyle(AuroraInlineButton())
+            }.padding(.trailing,Aurora.Space.page)
+            Text("取消任务会保留原图；删除图片在每行的更多菜单。草稿发送或清空、AI 回答结束后会自动继续检查。待核对任务先确认结果，再恢复队列。").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary).fixedSize(horizontal: false, vertical: true).padding(.trailing,Aurora.Space.page)
                 LazyVStack(spacing: Aurora.Space.tiny) {
                     ForEach(photos) { photo in PhotoRow(model: model, photo: photo) { openPhoto(photo) } }
                     if photos.isEmpty { if filter == "全部" { EmptyPhotos() } else { Text("暂无\(filter)的记录").foregroundStyle(Aurora.Colors.secondary).frame(maxWidth: .infinity).padding(Aurora.Space.card) } }
                 }.padding(Aurora.Space.card).glassCard().padding(.trailing, Aurora.Space.page).padding(.bottom, Aurora.Space.page).animatedRows(photos.map(\.id))
-            }.scrollIndicators(.automatic).frame(maxWidth: .infinity, maxHeight: .infinity).id(filter)
-        }
+          }
+        }.scrollIndicators(.automatic).frame(maxWidth: .infinity, maxHeight: .infinity).id(filter)
+        .confirmationDialog("取消当前课堂的待发任务？",isPresented:$cancellingQueue) {
+            Button("取消待发任务，保留照片") { model.cancelPendingDeliveries() }
+        } message: { Text("已开始上传的任务不会被删除；AI 已收到的图片不会撤回。聊天中若仍有附件，请先处理。") }
     }
 }

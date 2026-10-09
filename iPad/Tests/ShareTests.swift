@@ -25,6 +25,21 @@ final class ShareTests: XCTestCase {
         try reloaded.remove(item.id); XCTAssertTrue(reloaded.items.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath:inbox.url(item).path)); XCTAssertTrue(FileManager.default.fileExists(atPath:source.path))
     }
+    func testSendPlanIsFrozenAndDoesNotAuthorizeOtherPendingImages() throws {
+        let folder = try directory(); defer { try? FileManager.default.removeItem(at:folder) }
+        let source = folder.appendingPathComponent("image.png"); let bytes = png(); try bytes.write(to:source)
+        let inbox = try ShareInbox(directory:folder.appendingPathComponent("pending"))
+        let old = try inbox.add(source), current = try inbox.add(source), target = UUID()
+        XCTAssertThrowsError(try inbox.setPlan(ids:[current.id],session:nil,sendToAI:true))
+        XCTAssertNil(inbox.items.last?.deliveryIntent)
+        try inbox.setPlan(ids:[current.id],session:target,sendToAI:true)
+        let reload = try ShareInbox(directory:inbox.directory)
+        XCTAssertNil(reload.items.first { $0.id == old.id }?.deliveryIntent)
+        XCTAssertEqual(reload.items.last?.deliveryIntent,"explicitShare")
+        XCTAssertEqual(reload.items.last?.sessionID,target)
+        XCTAssertEqual(try Data(contentsOf:reload.url(current)),bytes)
+        XCTAssertThrowsError(try reload.setPlan(ids:[UUID()],session:target,sendToAI:true))
+    }
     func testRejectUnsupportedAndOversizeWithoutPendingEntry() throws {
         let folder = try directory(); defer { try? FileManager.default.removeItem(at:folder) }
         let inbox = try ShareInbox(directory:folder.appendingPathComponent("pending"))
@@ -51,14 +66,20 @@ final class ShareTests: XCTestCase {
 }
 
 extension ShareTests {
-    @MainActor func testSystemProviderPairingAndArchiveReceipt() async throws {
+    @MainActor func testSystemProviderPairingAndArchiveReceipt() async throws { try await exerciseShare(sendAI:false) }
+    @MainActor func testExplicitShareSendsOnlyFreshSelectionWithoutWaitingForAI() async throws { try await exerciseShare(sendAI:true) }
+    @MainActor func testPartialBatchDisconnectDoesNotLookCompleted() async throws { try await exerciseShare(sendAI:true,interruptAfterFirst:true) }
+    @MainActor private func exerciseShare(sendAI:Bool, interruptAfterFirst:Bool = false) async throws {
         let folder = try directory(); defer { try? FileManager.default.removeItem(at:folder) }
         let bytes = png(), url = folder.appendingPathComponent("image.png"); try bytes.write(to:url)
         let item = NSExtensionItem(); item.attachments = [try XCTUnwrap(NSItemProvider(contentsOf:url))]
+        if interruptAfterFirst { item.attachments?.append(try XCTUnwrap(NSItemProvider(contentsOf:url))) }
+        let pending = folder.appendingPathComponent("pending")
+        let old = try ShareInbox(directory:pending).add(url)
         var credentials: [String:String] = [:]
-        let model = ShareModel(directory:folder.appendingPathComponent("pending"),loadPairings:{ credentials },savePairings:{ credentials = $0 }); defer { model.stop() }
+        let model = ShareModel(directory:pending,loadPairings:{ credentials },savePairings:{ credentials = $0 }); defer { model.stop() }
         model.start(items:[item]); try await waitUntil { !model.importing }
-        try XCTUnwrap(model.preview); XCTAssertNil(model.error); XCTAssertFalse(model.images.isEmpty)
+        try XCTUnwrap(model.preview); XCTAssertNil(model.error); XCTAssertEqual(model.images.count,interruptAfterFirst ? 3 : 2); XCTAssertEqual(model.selectedCount,interruptAfterFirst ? 2 : 1); XCTAssertFalse(model.selectedIDs.contains(old.id))
         let conn = NWConnection(host:"127.0.0.1",port:27184,using:.tcp); defer { conn.cancel() }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void,Error>) in
             conn.stateUpdateHandler = { state in
@@ -74,9 +95,15 @@ extension ShareTests {
         try await waitUntil { model.pairingCode != nil }
         try await command("PAIR \(try XCTUnwrap(model.pairingCode))",conn)
         try await waitUntil { model.connected }
-        try await command("CONTEXT -",conn)
+        let target = UUID()
+        if sendAI {
+            try await command("FEATURES explicit-share-v1 target-ready",conn)
+            let context = LessonContext(lesson:Lesson(id:target,courseID:UUID(),title:"QA",startedAt:Date(),timeZoneID:"America/Toronto"),courseName:"QA Course")
+            try await command("CONTEXT " + JSONEncoder().encode(context).base64EncodedString(),conn)
+        } else { try await command("CONTEXT -",conn) }
         try await waitUntil { model.status == "已连接 · 可以保存到 Mac" }
-        model.beginTransfer()
+        XCTAssertEqual(model.canSendAI,sendAI)
+        model.beginTransfer(sendToAI:sendAI)
         var decoder = WireDecoder(), photo: (WireHeader,Data)?
         while photo == nil {
             let data: Data = try await withCheckedThrowingContinuation { continuation in
@@ -89,13 +116,27 @@ extension ShareTests {
             for frame in try decoder.append(data) where frame.0.kind == "photo" { photo = frame }
         }
         let result = try XCTUnwrap(photo)
-        XCTAssertEqual(result.1,bytes); XCTAssertEqual(result.0.sendToAI,false)
+        XCTAssertEqual(result.1,bytes); XCTAssertEqual(result.0.sendToAI,sendAI)
+        XCTAssertEqual(result.0.deliveryIntent,sendAI ? "explicitShare" : "archiveOnly")
+        if sendAI { XCTAssertEqual(result.0.sessionID,target) }
         XCTAssertEqual(result.0.sha256,SHA256.hash(data:bytes).map { String(format:"%02x",$0) }.joined())
         XCTAssertTrue(model.transferring); XCTAssertEqual(model.completed,0) // Socket write is not an archive receipt.
+        if sendAI { try await command("STATUS \(result.0.id.uuidString) queued",conn) }
         try await command("RECEIVED \(result.0.id.uuidString)",conn)
+        if interruptAfterFirst {
+            try await waitUntil { model.completed == 1 }
+            conn.cancel()
+            try await waitUntil { !model.connected && !model.transferring }
+            XCTAssertFalse(model.batchFinished)
+            XCTAssertEqual(model.images.count,2)
+            XCTAssertEqual(model.selectedCount,1)
+            return
+        }
         try await waitUntil { model.completed == 1 && !model.transferring }
-        XCTAssertTrue(model.images.isEmpty)
-        XCTAssertEqual(model.status,"已保存到 Mac · 本次不自动发送 AI")
+        XCTAssertTrue(model.batchFinished)
+        XCTAssertEqual(model.images.map(\.id),[old.id]); XCTAssertEqual(model.selectedCount,0)
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.status,sendAI ? "已保存到 Mac · AI 由电脑继续处理" : "已保存到 Mac · 本次不自动发送 AI")
     }
     @MainActor private func waitUntil(_ predicate: () -> Bool) async throws {
         for _ in 0..<100 { if predicate() { return }; try await Task.sleep(for:.milliseconds(100)) }

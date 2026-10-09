@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SnapSend · 课堂照片投递",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "通过本机 USB 桥接，把绑定课堂的新照片投递到 ChatGPT。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkO5gU0n9YkmkRtQRQ/Nh/jPDpMBI87ZKkHqSxI9CjT+7+DdKvQrTqiX5IcZQR7/NRecsUypNiQw8DQP0eK3FBbfxn66EDIcNW9WJ6gMivba7LaCvRfGk6xtngADTdrHbDB7X2CRz3IqqooRUgyZnybldaswLfCODsM/bFFUqZ0wpX183hFT7BbKkaiyQSxVP0eI0hHAdeOFY3hc8V+Gx7caT92unsp+GX0uoNsiRblsXYaoQquUju7Mu3ZaQa9ezsO0yqOBTLod+hS9CKXzsm7pH4jGYqKRTQzPu889+YmgEmKRBhpQSZTRgTQmeG/Lkf0PmZfXl5MJpirxcZfEXEwIDAQAB",
   "permissions": [

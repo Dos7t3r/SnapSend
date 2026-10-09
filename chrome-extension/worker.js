@@ -124,6 +124,11 @@ async function tick() {
 
     status = '正在后台上传课堂照片...';
     const result = await chrome.tabs.sendMessage(bound.tab, {kind: 'attach', job});
+    if (!result.ok && result.deferred === true && mac.version >= 6) {
+      const released = await native({kind:'defer',id:job.id,detail:result.error,...bound});
+      if (!released.ok) throw new Error(released.error);
+      status = result.error; interval = 6000; job = null; return;
+    }
     if (!result.ok) throw new Error(result.error);
 
     const permission = await native({kind: 'submitting', id: job.id, ...bound});
@@ -182,7 +187,12 @@ async function snapshot() {
     if (!matched && mac.targetURL && tab.url !== mac.targetURL) { view.title='打开已保存的 Section 聊天';view.next='当前网页是另一条聊天。打开已保存的目标，确认状态后再开启发送。';view.action='focus';return finish(); }
     if (!matched) { view.title='下一步：绑定此聊天';view.next='确认这是当前 Section 的专用聊天，点击绑定。绑定只保存目标；之后由你开启自动发送。';view.action='bind';return finish(); }
     if (mac.review) { view.state='error';view.title='有照片需要核对';view.next='在 Mac 选中待核对照片，到 ChatGPT 确认是否收到；核对后点击“重新检查连接”；输入框如有附件，请先手动处理。';view.action='check';return finish(); }
-    if (!mac.auto) { view.title='已绑定，尚未开启发送';view.next='点击开启自动发送。随后关闭此面板，手机拍照确认即可。';view.action='enable';return finish(); }
+    if (!mac.auto) {
+      const resume = mac.version >= 6 && (mac.pendingQueued ?? mac.queued) > 0;
+      view.title=resume ? '已暂停，有待发送任务' : '已绑定，尚未开启发送';
+      view.next=resume ? '恢复后会继续已授权的待发送任务，并发送新照片；仅保存和已取消的照片不会发送。' : '点击开启自动发送。仅处理之后的新照片，之前仅保存的图片不会自动发送。';
+      view.action=resume ? 'resume' : 'enable';return finish();
+    }
     if (busy) { view.state='working';view.title='正在投递照片';view.next='关闭此面板即可，聊天标签页保持打开。'+status;view.action='pause';return finish(); }
     if (!page.ok) { view.state='waiting';view.title='自动发送已开启，暂时等待';view.next=page.error;view.action=page.canStop ? 'stopGeneration' : 'check';return finish(); }
     view.state='ready';view.title=mac.continuous === false ? '仅发送手动选中的图片' : mac.usb ? '已就绪，可以拍照' : '发送已开启，请连接手机';
@@ -198,7 +208,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   // Popup only; content scripts cannot enqueue arbitrary native commands.
   if (sender.tab || sender.id !== chrome.runtime.id) return;
   if (message.kind === 'status') { snapshot().then(view=>respond({status:view.title,view})); return true; }
-  if (message.kind === 'enable' || message.kind === 'pause') {
+  if (message.kind === 'enable' || message.kind === 'resume' || message.kind === 'pause') {
     (async()=>{
       if (!binding) throw new Error('请先绑定聊天');
       const [tab] = await chrome.tabs.query({active:true,currentWindow:true});

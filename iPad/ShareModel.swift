@@ -17,6 +17,20 @@ final class ShareModel: ObservableObject {
     @Published var importing = true
     @Published var transferring = false
     @Published var completed = 0
+    @Published var supportsAI = false
+    @Published var targetReady = false
+    @Published var preparingTransfer = false
+    @Published var selectedIDs: Set<UUID> = []
+    private var transferIDs: Set<UUID> = []
+    var batchFinished: Bool { !requested && transferIDs.isEmpty && completed > 0 }
+    var selectedCount: Int { images.filter { selectedIDs.contains($0.id) }.count }
+    func toggleSelection(_ id: UUID) {
+        guard !transferring, !preparingTransfer, !importing else { return }
+        if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
+    }
+    private var stages: [UUID:String] = [:]
+    private var wantsAI = false
+    var canSendAI: Bool { connected && contextSynced && supportsAI && targetReady && context != nil }
     private let storageDirectory: URL?
     private let loadPairings: () throws -> [String:String]
     private let savePairings: ([String:String]) throws -> Void
@@ -64,6 +78,7 @@ final class ShareModel: ObservableObject {
                     try Task.checkCancellation()
                     let image = try await importFile(provider, into: store)
                     guard !stopped else { return }
+                    selectedIDs.insert(image.id)
                     if preview == nil { preview = await Self.thumbnail(await store.url(image)) }
                 }
                 images = await store.snapshot(); importing = false
@@ -146,6 +161,7 @@ final class ShareModel: ObservableObject {
     private func control(_ kind: String, secret: String? = nil) throws {
         var header = WireHeader(kind: kind); header.deviceID = deviceID; header.secret = secret
         if kind == "hello" { header.challenge = proof }
+        if kind == "ready" { header.capabilities = ["explicit-share-v1"] }
         if kind == "pairing" { header.message = "在 Mac 输入 iPad 分享面板的 6 位验证码" }
         connection?.send(content: try WireEncoder.encode(header), completion: .contentProcessed { _ in })
     }
@@ -179,6 +195,9 @@ final class ShareModel: ObservableObject {
                 try savePairings(next); trusted = next; failures = 0
                 try control("paired", secret: secret); try authorize()
             } else { throw ShareError.message("认证失败，请在 Mac 重新连接") }
+        } else if line.hasPrefix("FEATURES ") {
+            let features = line.split(separator:" ")
+            supportsAI = features.contains("explicit-share-v1"); targetReady = features.contains("target-ready")
         } else if line.hasPrefix("CONTEXT ") {
             let value = String(line.dropFirst(8))
             if value == "-" { context = nil }
@@ -191,18 +210,33 @@ final class ShareModel: ObservableObject {
             try await storage.remove(id)
             images = await storage.snapshot()
             guard connection === conn else { return }
-            deadline?.cancel(); sendingID = nil; completed += 1; sendNext()
-        } else if line.hasPrefix("STATUS ") { /* Mac archive receipt is the only completion gate. */ }
+            deadline?.cancel(); sendingID = nil; completed += 1; selectedIDs.remove(id); transferIDs.remove(id)
+            if wantsAI && !["queued","preparing","submitting","sent"].contains(stages[id] ?? "") { error = "截图已保存，但 AI 任务未确认加入队列。请到 Mac 检查目标和发送任务。" }
+            sendNext()
+        } else if line.hasPrefix("STATUS ") {
+            let parts = line.split(separator:" ",maxSplits:3)
+            if parts.count >= 3, let id = UUID(uuidString:String(parts[1])) { stages[id] = String(parts[2]) }
+        }
         else { throw ShareError.message("收到无效接收回执") }
     }
-    func beginTransfer() {
-        guard !importing, connected, contextSynced else { return }
-        requested = true; error = nil; sendNext()
+    func beginTransfer(sendToAI: Bool = false) {
+        guard !importing, !preparingTransfer, !transferring, connected, contextSynced, !sendToAI || canSendAI, let storage else { return }
+        let ids = selectedIDs.intersection(Set(images.map(\.id)))
+        guard !ids.isEmpty else { return }
+        preparingTransfer = true; let target = context?.lesson.id, conn = connection
+        Task {
+            defer { preparingTransfer = false }
+            do {
+                images = try await storage.plan(ids,session:target,sendToAI:sendToAI)
+                guard connection === conn, connected, !stopped else { return }
+                transferIDs = ids; wantsAI = sendToAI; requested = true; error = nil; sendNext()
+            } catch { self.error = error.localizedDescription }
+        }
     }
     private func sendNext() {
         guard requested, authenticated, contextSynced, sendingID == nil, let conn = connection, let storage else { return }
-        guard let item = images.first else { requested = false; transferring = false; status = "已保存到 Mac · 本次不自动发送 AI"; return }
-        sendingID = item.id; transferring = true; status = "正在传输 · 还有 \(images.count) 张"; timeout(60)
+        guard let item = images.first(where:{ transferIDs.contains($0.id) }) else { requested = false; transferring = false; status = wantsAI ? "已保存到 Mac · AI 由电脑继续处理" : "已保存到 Mac · 本次不自动发送 AI"; return }
+        sendingID = item.id; transferring = true; status = "正在传输 · 还有 \(transferIDs.count) 张"; timeout(60)
         let target = context?.lesson.id
         transfer = Task {
             do {
@@ -220,14 +254,16 @@ final class ShareModel: ObservableObject {
     private func close() {
         deadline?.cancel(); deadline = nil; transfer?.cancel(); transfer = nil
         connection?.stateUpdateHandler = nil; connection?.cancel(); connection = nil
-        connected = false; authenticated = false; contextSynced = false; requested = false; transferring = false; sendingID = nil; pairingCode = nil
+        connected = false; supportsAI = false; targetReady = false; authenticated = false; contextSynced = false; requested = false; transferring = false; sendingID = nil; pairingCode = nil
         status = "等待 USB · 未确认的图片仍保留"
     }
-    func retry() { close(); error = nil; startServer() }
+    func retry() { guard !preparingTransfer else { return }; close(); error = nil; startServer() }
     func deletePending() {
-        guard !transferring, !importing, let storage else { return }
+        guard !transferring, !preparingTransfer, !importing, let storage else { return }
+        preparingTransfer = true
         Task {
-            do { for image in images { try await storage.remove(image.id) }; images = await storage.snapshot(); preview = nil }
+            defer { preparingTransfer = false }
+            do { for image in images { try await storage.remove(image.id) }; images = await storage.snapshot(); selectedIDs.removeAll(); preview = nil }
             catch { self.error = error.localizedDescription }
         }
     }

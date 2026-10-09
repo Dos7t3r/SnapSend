@@ -8,7 +8,7 @@ actor ShareTransport {
         let info = try ShareFile.inspect(url)
         guard info.count == image.byteCount, info.hash == image.sha256 else { throw ShareFile.Failure.changed }
         var header = WireHeader(kind: "photo", id: image.id, byteCount: image.byteCount, sha256: image.sha256)
-        header.sendToAI = false; header.sessionID = session; header.capturedAt = image.createdAt
+        header.sendToAI = image.deliveryIntent == "explicitShare"; header.deliveryIntent = image.deliveryIntent ?? "archiveOnly"; header.sessionID = image.sessionID ?? session; header.capturedAt = image.createdAt
         try await write(try WireEncoder.metadata(header), to: connection)
         let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
         var sent = 0
@@ -39,6 +39,9 @@ actor ShareStorage {
               let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
               width > 0, height > 0, width <= 16000, height <= 16000, width * height <= 100_000_000 else { throw ShareFile.Failure.unsupported }
         return try inbox.add(source)
+    }
+    func plan(_ ids:Set<UUID>, session:UUID?, sendToAI:Bool) throws -> [SharedImage] {
+        try inbox.setPlan(ids:ids,session:session,sendToAI:sendToAI); return inbox.items
     }
     func url(_ image: SharedImage) -> URL { inbox.url(image) }
     func remove(_ id: UUID) throws { try inbox.remove(id) }

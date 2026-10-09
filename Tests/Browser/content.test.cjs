@@ -18,7 +18,7 @@ function setup(options = {}) {
     setTimeout:fn=>queueMicrotask(fn),Uint8Array,atob,File:class {},Event:class {},DataTransfer:class {constructor(){this.files=[];this.items={add:x=>this.files.push(x)};}},ClipboardEvent:class {}});
   vm.runInContext(fs.readFileSync('chrome-extension/content.js','utf8'),context);
   const message = m => new Promise(resolve=>listener(m,{id:'test'},resolve));
-  return {message,clicks:()=>clicks,clearComposer:()=>{images=0;input.innerText='';},options};
+  return {message,setDraft:text=>{input.innerText=text;},clicks:()=>clicks,clearComposer:()=>{images=0;input.innerText='';},options};
 }
 const job = {id:'photo',jpeg:'AA==',filename:'photo.jpg'};
 test('user draft blocks attachment',async()=>{const s=setup({draft:'notes'});assert.equal((await s.message({kind:'ready'})).ok,false);assert.equal(s.clicks(),0);});
@@ -83,4 +83,12 @@ test('resolved Mac receipt unlocks only an empty composer, never removes uncerta
   s.clearComposer();assert.equal((await s.message({kind:'ready'})).ok,false);
   assert.equal((await s.message({kind:'ready',releaseStaged:true})).ok,true);
   assert.equal(s.clicks(),1);
+});
+
+test('draft racing attachment returns a safe deferral and clears without refresh',async()=>{
+ const s=setup();assert.equal((await s.message({kind:'ready'})).ok,true);
+ s.setDraft('my manual message');const result=await s.message({kind:'attach',job});
+ assert.equal(result.ok,false);assert.equal(result.deferred,true);assert.equal(s.clicks(),0);
+ s.setDraft('');assert.equal((await s.message({kind:'ready'})).ok,true);
+ assert.equal((await s.message({kind:'attach',job})).ok,true);
 });
