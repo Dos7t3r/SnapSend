@@ -103,8 +103,11 @@ public final class PhoneLibrary {
     }
     public func updateCourseName(from context: LessonContext) throws {
         var updated = contexts
-        for (key, old) in contexts where old.lesson.courseID == context.lesson.courseID && old.courseName != context.courseName {
-            updated[key] = LessonContext(lesson: old.lesson, courseName: context.courseName)
+        for (key, old) in contexts where old.lesson.courseID == context.lesson.courseID {
+            let sectionName = old.lesson.sectionID == context.lesson.sectionID ? context.sectionName : old.sectionName
+            if old.courseName != context.courseName || old.sectionName != sectionName {
+                updated[key] = LessonContext(lesson: old.lesson, courseName: context.courseName, sectionName: sectionName)
+            }
         }
         guard updated != contexts else { return }
         try JSONEncoder().encode(updated).write(to: contextURL, options: .atomic)
