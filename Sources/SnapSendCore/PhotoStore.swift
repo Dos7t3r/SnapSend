@@ -137,7 +137,7 @@ public final class PhotoStore {
         do {
             for index in updated.indices where ids.contains(updated[index].id) && updated[index].sessionID != lessonID {
                 let old = updated[index]
-                let relative = "Courses/\(context.lesson.courseID.uuidString)/\(lessonID.uuidString)/\(old.id.uuidString).jpg"
+                let relative = "Courses/\(context.lesson.courseID.uuidString)/\(lessonID.uuidString)/\(old.id.uuidString).\(URL(fileURLWithPath: old.filename).pathExtension)"
                 let target = directory.appendingPathComponent(relative)
                 try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try FileManager.default.copyItem(at: url(for: old), to: target)
@@ -173,8 +173,8 @@ public final class PhotoStore {
 
     @discardableResult
     public func save(_ data: Data, id: UUID = UUID(), expectedHash: String? = nil,
-                     sessionID: UUID? = nil, capturedAt: Date? = nil) throws -> PhotoRecord {
-        guard !data.isEmpty, data.count <= 40 * 1024 * 1024 else { throw StoreError.invalidSize }
+                     sessionID: UUID? = nil, capturedAt: Date? = nil, fileExtension: String = "jpg") throws -> PhotoRecord {
+        guard ["jpg", "png"].contains(fileExtension), !data.isEmpty, data.count <= 40 * 1024 * 1024 else { throw StoreError.invalidSize }
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         if let expectedHash, expectedHash != hash { throw StoreError.hashMismatch }
         if let old = records.first(where: { $0.id == id }) {
@@ -188,7 +188,7 @@ public final class PhotoStore {
             destination = sessionID
         } else { destination = try ensureLegacyLesson() }
         guard let context = catalog.context(for: destination) else { throw StoreError.unknownLesson }
-        let relative = "Courses/\(context.lesson.courseID.uuidString)/\(destination.uuidString)/\(id.uuidString).jpg"
+        let relative = "Courses/\(context.lesson.courseID.uuidString)/\(destination.uuidString)/\(id.uuidString).\(fileExtension)"
         let record = PhotoRecord(id: id, receivedAt: Date(), filename: relative, sha256: hash,
                                  byteCount: data.count, status: "Mac 已保存 · 尚未发送给 AI",
                                  sessionID: destination, capturedAt: capturedAt)

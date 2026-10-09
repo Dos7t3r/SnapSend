@@ -3,6 +3,24 @@ import CryptoKit
 @testable import SnapSendCore
 
 final class CoreTests: XCTestCase {
+    func testPNGOriginalExtensionSurvivesMoveReloadAndDuplicateReceipt() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try PhotoStore(directory: directory)
+        let first = try store.createCourse(name: "iPad"), second = try store.createCourse(name: "另一课程")
+        let bytes = Data([137,80,78,71,13,10,26,10])
+        let item = try store.save(bytes, sessionID: first.id, fileExtension: "png")
+        XCTAssertEqual(store.url(for: item).pathExtension, "png")
+        try store.movePhotos(ids: [item.id], to: second.id)
+        let restored = try PhotoStore(directory: directory)
+        let moved = try XCTUnwrap(restored.records.first)
+        XCTAssertEqual(restored.url(for: moved).pathExtension, "png")
+        XCTAssertEqual(try Data(contentsOf: restored.url(for: moved)), bytes)
+        _ = try restored.save(bytes, id: item.id, fileExtension: "png")
+        XCTAssertEqual(restored.records.count, 1)
+        XCTAssertThrowsError(try restored.save(bytes, fileExtension: "../png"))
+    }
+
     func testConversationURLIncludesProjectChatsButRejectsLandingPages() {
         XCTAssertTrue(ChatURL.isConversation("https://chatgpt.com/c/6ac67d7c-1698-83ea-9d8f-d46c60b2ac0c"))
         XCTAssertTrue(ChatURL.isConversation("https://chatgpt.com/g/g-p-example-sta256/c/6ac67d7c-1698-83ea-9d8f-d46c60b2ac0c"))
