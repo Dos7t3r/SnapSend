@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DeliveryState: String, Codable, Sendable {
-    case queued, preparing, submitting, sent, uncertain, failed
+    case held, queued, preparing, submitting, sent, uncertain, failed
 }
 public struct DeliveryEntry: Codable, Identifiable, Sendable {
     public var id: UUID
@@ -31,9 +31,9 @@ public final class DeliveryLedger {
     private func commit(_ value: [DeliveryEntry]) throws {
         try JSONEncoder().encode(value).write(to: url, options: .atomic); entries = value
     }
-    public func enqueue(id: UUID, lessonID: UUID, destination: String) throws {
+    public func enqueue(id: UUID, lessonID: UUID, destination: String, automatic: Bool = true) throws {
         guard !entries.contains(where: { $0.id == id }) else { return }
-        try commit(entries + [DeliveryEntry(id: id, lessonID: lessonID, destination: destination, state: .queued, detail: "等待发送")])
+        try commit(entries + [DeliveryEntry(id: id, lessonID: lessonID, destination: destination, state: automatic ? .queued : .held, detail: automatic ? "等待发送" : "仅保存，不自动发送")])
     }
     public func forceEnqueue(id: UUID, lessonID: UUID, destination: String) throws {
         var copy = entries
@@ -53,9 +53,14 @@ public final class DeliveryLedger {
         let copy = entries.filter { !ids.contains($0.id) }
         try commit(copy)
     }
+    public func holdQueued() throws {
+        var copy = entries
+        for i in copy.indices where copy[i].state == .queued { copy[i].state = .held; copy[i].detail = "仅保存，不自动发送" }
+        if copy.contains(where: { $0.state == .held }) && !copy.elementsEqual(entries, by: { $0.state == $1.state }) { try commit(copy) }
+    }
     public func resetQueue() throws {
         guard !entries.contains(where: { [.preparing, .submitting].contains($0.state) }) else { throw LedgerError.invalidTransition }
-        let copy = entries.filter { $0.state == .sent }
+        let copy = entries.filter { $0.state == .sent || $0.state == .held }
         try commit(copy)
     }
     public func reassign(ids: Set<UUID>, lessonID: UUID) throws {
@@ -68,7 +73,7 @@ public final class DeliveryLedger {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { throw LedgerError.unknown }
         let old = entries[i].state
         let allowed: [DeliveryState: [DeliveryState]] = [
-            .queued: [.preparing], .preparing: [.submitting, .failed, .uncertain],
+            .held: [.queued], .queued: [.preparing, .held], .preparing: [.submitting, .failed, .uncertain],
             .submitting: [.sent, .uncertain], .failed: [.queued], .uncertain: [.queued, .sent], .sent: []
         ]
         guard allowed[old, default: []].contains(state) else { throw LedgerError.invalidTransition }

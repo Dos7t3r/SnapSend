@@ -15,14 +15,15 @@ public struct PhonePhoto: Identifiable, Equatable, Sendable {
     public let createdAt: Date
     public let receivedByMac: Bool
     public let context: LessonContext?
+    public var sendToAI: Bool
     public var stage: String?
     public var stageDetail: String?
 
     public init(id: UUID, url: URL, createdAt: Date, receivedByMac: Bool, context: LessonContext?,
-                stage: String? = nil, stageDetail: String? = nil) {
+                stage: String? = nil, stageDetail: String? = nil, sendToAI: Bool = true) {
         self.id = id; self.url = url; self.createdAt = createdAt
         self.receivedByMac = receivedByMac; self.context = context
-        self.stage = stage; self.stageDetail = stageDetail
+        self.stage = stage; self.stageDetail = stageDetail; self.sendToAI = sendToAI
     }
 }
 
@@ -30,6 +31,8 @@ public final class PhoneLibrary {
     public let directory: URL
     public private(set) var photos: [PhonePhoto] = []
     private var received = Set<UUID>()
+    private var deliveryChoices: [String: Bool] = [:]
+    private var choicesURL: URL { directory.appendingPathComponent("delivery-choices.json") }
     private var contexts: [String: LessonContext] = [:]
     private var stages: [String: PhoneStageRecord] = [:]
     private var contextURL: URL { directory.appendingPathComponent("contexts.json") }
@@ -47,6 +50,7 @@ public final class PhoneLibrary {
         if FileManager.default.fileExists(atPath: stageURL.path) {
             stages = (try? JSONDecoder().decode([String: PhoneStageRecord].self, from: Data(contentsOf: stageURL))) ?? [:]
         }
+        if FileManager.default.fileExists(atPath: choicesURL.path) { deliveryChoices = try JSONDecoder().decode([String: Bool].self, from: Data(contentsOf: choicesURL)) }
         try reload()
     }
     public func reload() throws {
@@ -57,13 +61,15 @@ public final class PhoneLibrary {
             let date = try url.resourceValues(forKeys: [.creationDateKey]).creationDate ?? .distantPast
             let stageRec = stages[id.uuidString]
             return PhonePhoto(id: id, url: url, createdAt: date, receivedByMac: received.contains(id),
-                              context: contexts[id.uuidString], stage: stageRec?.stage, stageDetail: stageRec?.detail)
+                              context: contexts[id.uuidString], stage: stageRec?.stage, stageDetail: stageRec?.detail, sendToAI: deliveryChoices[id.uuidString] ?? true)
         }.sorted { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
     }
     @discardableResult
-    public func save(_ jpeg: Data, context: LessonContext? = nil) throws -> UUID {
+    public func save(_ jpeg: Data, context: LessonContext? = nil, sendToAI: Bool = true) throws -> UUID {
         guard !jpeg.isEmpty, jpeg.count <= 40 * 1024 * 1024 else { throw LibraryError.invalidSize }
         let id = UUID()
+        var choices = deliveryChoices; choices[id.uuidString] = sendToAI
+        try JSONEncoder().encode(choices).write(to: choicesURL, options: .atomic); deliveryChoices = choices
         if let context {
             var updated = contexts; updated[id.uuidString] = context
             try JSONEncoder().encode(updated).write(to: contextURL, options: .atomic)
@@ -72,7 +78,7 @@ public final class PhoneLibrary {
         try jpeg.write(to: directory.appendingPathComponent("\(id.uuidString).jpg"), options: .atomic)
         let url = directory.appendingPathComponent("\(id.uuidString).jpg")
         let date = try url.resourceValues(forKeys: [.creationDateKey]).creationDate ?? Date()
-        photos.append(PhonePhoto(id: id, url: url, createdAt: date, receivedByMac: false, context: context))
+        photos.append(PhonePhoto(id: id, url: url, createdAt: date, receivedByMac: false, context: context, sendToAI: sendToAI))
         return id
     }
     public func acknowledge(_ id: UUID) throws {
@@ -117,7 +123,7 @@ public final class PhoneLibrary {
     private func updatePhoto(_ id: UUID) {
         guard let index = photos.firstIndex(where: { $0.id == id }) else { return }
         let old = photos[index], record = stages[id.uuidString]
-        photos[index] = PhonePhoto(id: id, url: old.url, createdAt: old.createdAt, receivedByMac: received.contains(id), context: contexts[id.uuidString], stage: record?.stage, stageDetail: record?.detail)
+        photos[index] = PhonePhoto(id: id, url: old.url, createdAt: old.createdAt, receivedByMac: received.contains(id), context: contexts[id.uuidString], stage: record?.stage, stageDetail: record?.detail, sendToAI: deliveryChoices[id.uuidString] ?? true)
     }
     public enum LibraryError: Error { case invalidSize, unknownPhoto }
 }

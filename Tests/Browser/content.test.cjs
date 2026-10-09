@@ -6,7 +6,8 @@ function setup(options = {}) {
   let listener, images = 0, clicks = 0, users = options.olderOnly || options.virtualized ? [{querySelector:()=>({})}] : [];
   const input = {innerText:options.draft || '', getClientRects:()=>[{}],focus:()=>{},closest:()=>scope,getAttribute:()=> '询问 ChatGPT'};
   const button = {dataset:options.project?{}:{testid:'send-button'},disabled:false,getAttribute:()=>options.project?'发送':null,getClientRects:()=>[{}],click:()=>{clicks++; if(options.olderOnly) {users.unshift({querySelector:()=>({})});images=0;} else if(options.confirm !== false) { if(options.virtualized) users=[];users.push({querySelector:()=>({}),textContent:input.innerText}); input.innerText=''; images=0; }}};
-  const scope = {textContent:'',querySelector:()=>null,querySelectorAll:key=>key==='button'?[button,...(options.generating?[{dataset:{},getClientRects:()=>[{}],getAttribute:()=> '停止'}]:[])]:key==='img'?Array(images).fill({}):key==='input[type=file]' && options.composerFile?[file]:[]};
+  const generationButton = {dataset:{testid:'stop-button'},disabled:false,getClientRects:()=>[{}],getAttribute:()=> '停止',click:()=>{options.generating=false;}};
+  const scope = {textContent:'',querySelector:()=>null,querySelectorAll:key=>key==='button'?[button,...(options.generating?[generationButton]:[])]:key==='img'?Array(images).fill({}):key==='input[type=file]' && options.composerFile?[file]:[]};
   const file = {disabled:false,accept:'image/jpeg',dispatchEvent:()=>{if(options.upload !== false)images++;}};
   const document = {
     execCommand: (command, ui, text) => {input.innerText=text;return true;},
@@ -17,7 +18,7 @@ function setup(options = {}) {
     setTimeout:fn=>queueMicrotask(fn),Uint8Array,atob,File:class {},Event:class {},DataTransfer:class {constructor(){this.files=[];this.items={add:x=>this.files.push(x)};}},ClipboardEvent:class {}});
   vm.runInContext(fs.readFileSync('chrome-extension/content.js','utf8'),context);
   const message = m => new Promise(resolve=>listener(m,{id:'test'},resolve));
-  return {message,clicks:()=>clicks};
+  return {message,clicks:()=>clicks,clearComposer:()=>{images=0;input.innerText='';},options};
 }
 const job = {id:'photo',jpeg:'AA==',filename:'photo.jpg'};
 test('user draft blocks attachment',async()=>{const s=setup({draft:'notes'});assert.equal((await s.message({kind:'ready'})).ok,false);assert.equal(s.clicks(),0);});
@@ -63,4 +64,23 @@ test('prompt click without new text receipt reports uncertainty', async()=>{
 });
 test('prompt cannot send into a different conversation', async()=>{
   const s=setup();assert.equal((await s.message({kind:'sendPrompt',text:'prompt',url:'https://chatgpt.com/c/other'})).ok,false);assert.equal(s.clicks(),0);
+});
+
+test('AI ending resumes readiness without reload',async()=>{
+  const s=setup({generating:true});assert.equal((await s.message({kind:'ready'})).reason,'generating');
+  s.options.generating=false;assert.equal((await s.message({kind:'ready'})).ok,true);
+});
+test('explicit stop only targets the bound conversation and preserves send count',async()=>{
+  const s=setup({generating:true});
+  assert.equal((await s.message({kind:'stopGeneration',url:'https://chatgpt.com/c/wrong'})).ok,false);
+  assert.equal((await s.message({kind:'ready'})).canStop,true);
+  assert.equal((await s.message({kind:'stopGeneration',url:'https://chatgpt.com/c/class'})).ok,true);
+  assert.equal((await s.message({kind:'ready'})).ok,true);assert.equal(s.clicks(),0);
+});
+test('resolved Mac receipt unlocks only an empty composer, never removes uncertain attachment',async()=>{
+  const s=setup({confirm:false});await s.message({kind:'attach',job});await s.message({kind:'submit',id:job.id});
+  assert.equal((await s.message({kind:'ready',releaseStaged:true})).ok,false);
+  s.clearComposer();assert.equal((await s.message({kind:'ready'})).ok,false);
+  assert.equal((await s.message({kind:'ready',releaseStaged:true})).ok,true);
+  assert.equal(s.clicks(),1);
 });

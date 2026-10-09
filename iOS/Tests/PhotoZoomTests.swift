@@ -136,6 +136,23 @@ final class PhotoZoomTests: XCTestCase {
         }
     }
 
+    @MainActor func testPrivateCaptureChoicePersistsAndIsNotChangedByUSBReceipt() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let model = PhoneModel(preview: true)
+        try await model.configureTesting(directory: folder)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100)).image { ctx in UIColor.blue.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 100)) }
+        model.save(image, context: nil, sendToAI: false)
+        for _ in 0..<100 where model.photos.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(model.photos.count, 1)
+        XCTAssertFalse(try XCTUnwrap(model.photos.first).sendToAI)
+        let storage = try PhoneStorage(directory: folder)
+        let photos = try await storage.acknowledge(try XCTUnwrap(model.photos.first).id)
+        XCTAssertFalse(photos[0].sendToAI)
+        let restored = PhoneModel(preview: true); try await restored.configureTesting(directory: folder)
+        XCTAssertFalse(restored.photos[0].sendToAI)
+    }
+
     @MainActor func testCaptureFiveStatesAtDeviceSize() async throws {
         let url = try fixture(); defer { try? FileManager.default.removeItem(at: url) }
         let lesson = SnapSendPhone.Lesson(id: UUID(), courseID: UUID(), title: "课堂", startedAt: Date(), timeZoneID: TimeZone.current.identifier)

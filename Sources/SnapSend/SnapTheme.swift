@@ -27,7 +27,7 @@ enum SnapTheme {
     enum CaptureLayout {
         // Portrait presentation of the full 4:3 camera sensor, with no cropping.
         static func preview(in available: CGSize) -> CGSize {
-            let height = max(0, available.height - 44 - 12 - 12 - 44 - 40)
+            let height = max(0, available.height - 44 - 12 - 12 - 44 - 84)
             let width = max(0, min(available.width - 24, height * 3 / 4))
             return CGSize(width: width, height: width * 4 / 3)
         }

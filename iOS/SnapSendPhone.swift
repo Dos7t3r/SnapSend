@@ -71,23 +71,23 @@ final class PhoneModel: ObservableObject {
             } catch { errorMessage = "无法读取照片历史：\(error.localizedDescription)" }
         }
     }
-    func save(_ image: UIImage, context: LessonContext?, quality: Double = 0.9) {
+    func save(_ image: UIImage, context: LessonContext?, quality: Double = 0.9, sendToAI: Bool = true) {
         savingCount += 1
         let background = UIApplication.shared.beginBackgroundTask(withName: "保存课堂照片")
         Task {
             defer { savingCount -= 1; if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
             guard let storage else { errorMessage = "照片存储尚未就绪，请稍后重试"; return }
-            do { photos = try await storage.save(image, context: context, quality: quality); lastSavedID = photos.last?.id; errorMessage = nil; sendNext() }
+            do { photos = try await storage.save(image, context: context, quality: quality, sendToAI: sendToAI); lastSavedID = photos.last?.id; errorMessage = nil; sendNext() }
             catch { errorMessage = "保存失败：\(error.localizedDescription)" }
         }
     }
-    func save(_ data: Data, context: LessonContext?, quality: Double = 0.9) {
+    func save(_ data: Data, context: LessonContext?, quality: Double = 0.9, sendToAI: Bool = true) {
         savingCount += 1
         let background = UIApplication.shared.beginBackgroundTask(withName: "保存课堂照片")
         Task {
             defer { savingCount -= 1; if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
             guard let storage else { errorMessage = "照片存储尚未就绪，请稍后重试"; return }
-            do { photos = try await storage.save(data, context: context, quality: quality); lastSavedID = photos.last?.id; errorMessage = nil; sendNext() }
+            do { photos = try await storage.save(data, context: context, quality: quality, sendToAI: sendToAI); lastSavedID = photos.last?.id; errorMessage = nil; sendNext() }
             catch { errorMessage = "保存失败：\(error.localizedDescription)" }
         }
     }

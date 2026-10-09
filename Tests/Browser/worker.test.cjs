@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 function setup(overrides = {}) {
-  let listener, timer;
+  let listener, timer, elapsed = 0;
   const requests = [], sent = [];
   const tab = {id:7, url:'https://chatgpt.com/c/class', active:true, windowId:1};
   let windowUpdates = 0;
@@ -27,10 +27,10 @@ function setup(overrides = {}) {
     tabs: {query:async()=>[tab],get:async()=>tab,update:async(id,opt)=>{Object.assign(tab,opt);return tab;},sendMessage:async(id,message)=>{sent.push(message.kind);return overrides.content?.(message) || {ok:true};}},
     windows:{get:async()=>({focused:false}),update:async()=>{windowUpdates++;return {focused:true};}}
   };
-  const context=vm.createContext({chrome,URL,Date,setTimeout:(fn,ms)=>{if(ms!==12000){timer=fn;return null;}return setTimeout(fn,ms);},clearTimeout,console});
+  const context=vm.createContext({chrome,URL,Date:{now:()=>Date.now()+elapsed},setTimeout:(fn,ms)=>{if(ms!==12000){timer=fn;return null;}return setTimeout(fn,ms);},clearTimeout,console});
   vm.runInContext(fs.readFileSync('chrome-extension/worker.js','utf8'),context);
   const bind=()=>new Promise(resolve=>listener({kind:'bind'},{id:'test'},resolve));
-  return {bind,tick:()=>timer(),requests,sent,tab,windowUpdates:()=>windowUpdates,message:m=>new Promise(resolve=>listener(m,{id:"test"},resolve))};
+  return {advance:ms=>{elapsed+=ms;},bind,tick:()=>timer(),requests,sent,tab,windowUpdates:()=>windowUpdates,message:m=>new Promise(resolve=>listener(m,{id:"test"},resolve))};
 }
 test('binding rejects other origins without touching native host', async()=>{
   const s=setup(); s.tab.url='https://example.org/c/class'; const r=await s.bind();
@@ -157,4 +157,36 @@ test('saved Section restoration focuses only after an explicit focus request', a
   assert.equal(s.requests.some(r=>r.kind==='restore' && r.url==='https://chatgpt.com/c/section-b'),true);
   assert.equal(s.windowUpdates(),1);
   assert.equal(s.requests.some(r=>r.kind==='poll'),false);
+});
+
+test('generation wait backs off and resumes the same queued photo without refreshing',async()=>{
+  let generating=true;
+  const s=setup({content:m=>m.kind==='ready' && !m.inspect && generating ? {ok:false,reason:'generating',canStop:true,error:'AI 正在回答'} : null});
+  await s.bind();await s.tick();assert.equal(s.requests.some(r=>r.kind==='poll'),false);
+  generating=false;s.advance(16000);await s.tick();assert.equal(s.requests.some(r=>r.kind==='poll'),true);
+});
+test('popup offers explicit stop and checks exact binding before acting',async()=>{
+  let bound=false;
+  const s=setup({content:m=>m.kind==='ready' && bound ? {ok:false,reason:'generating',canStop:true,error:'AI 正在回答'} : null});
+  await s.bind();bound=true;
+  assert.equal((await s.message({kind:'status'})).view.action,'stopGeneration');
+  assert.equal((await s.message({kind:'stopGeneration'})).ok,true);assert.equal(s.sent.includes('stopGeneration'),true);
+  s.tab.url='https://chatgpt.com/c/other';
+  const count=s.sent.filter(x=>x==='stopGeneration').length;
+  assert.equal((await s.message({kind:'stopGeneration'})).ok,false);assert.equal(s.sent.filter(x=>x==='stopGeneration').length,count);
+});
+test('readiness cannot release staged attachment until Mac resolves uncertainty and active send ends',async()=>{
+  let review=true;
+  const s=setup({native:r=>r.kind==='status'?{ok:true,version:5,lesson:'Math',usb:true,matching:true,auto:true,queued:1,review,inflight:false}:null,content:m=>{
+    if(m.kind==='ready' && m.inspect && !review) assert.equal(m.releaseStaged,true);
+    return {ok:true};
+  }});
+  await s.bind();assert.equal((await s.message({kind:'status'})).view.action,'check');
+  review=false;await s.message({kind:'status'});
+});
+
+test('manual selected-photo dispatch does not masquerade as continuous auto-send',async()=>{
+  const s=setup({native:r=>r.kind==='status'?{ok:true,version:5,lesson:'Math',matching:true,usb:true,auto:true,continuous:false,queued:1}:null});
+  await s.bind();const v=(await s.message({kind:'status'})).view;
+  assert.equal(v.title,'仅发送手动选中的图片');assert.equal(v.checks.find(c=>c.label==='自动发送').ok,false);
 });

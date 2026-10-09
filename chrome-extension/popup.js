@@ -1,6 +1,6 @@
 const byID = id=>document.getElementById(id);
 let action='check', inflight=false;
-const labels={focus:'打开已保存的聊天',bind:'绑定当前 Section 与聊天',enable:'开启自动发送',pause:'暂停自动发送',refresh:'刷新当前聊天页面',check:'重新检查连接'};
+const labels={stopGeneration:'停止当前回答并继续',focus:'打开已保存的聊天',bind:'绑定当前 Section 与聊天',enable:'开启自动发送',pause:'暂停自动发送',refresh:'刷新当前聊天页面',check:'重新检查连接'};
 function render(view) {
   action=view.action || 'check';byID('hero').className='hero '+view.state;
   byID('state').textContent=({ready:'准备完成',error:'需要处理',working:'投递中',waiting:'等待中',setup:'下一步'})[view.state] || '连接状态';

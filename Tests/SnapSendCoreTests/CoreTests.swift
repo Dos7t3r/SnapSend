@@ -36,6 +36,40 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(try DeliveryLedger(directory: dir).entries[0].state, .queued)
     }
 
+    func testSaveOnlyChoiceSurvivesPhoneReloadAndWireFraming() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = try PhoneLibrary(directory: dir)
+        let id = try library.save(Data([1,2,3]), sendToAI: false)
+        try library.acknowledge(id)
+        let restored = try PhoneLibrary(directory: dir)
+        XCTAssertFalse(try XCTUnwrap(restored.photos.first).sendToAI)
+        var header = WireHeader(kind: "photo", id: id, byteCount: 3)
+        header.sendToAI = restored.photos[0].sendToAI
+        var decoder = WireDecoder()
+        XCTAssertEqual(try decoder.append(WireEncoder.encode(header, body: Data([1,2,3]))).first?.0.sendToAI, false)
+        let legacy = WireHeader(kind: "photo", byteCount: 1)
+        XCTAssertNil(try JSONDecoder().decode(WireHeader.self, from: JSONEncoder().encode(legacy)).sendToAI)
+    }
+    func testHeldPhotosCannotAutoEnqueueAndResetDoesNotLoseExclusion() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let ledger = try DeliveryLedger(directory: dir), lesson = UUID(), personal = UUID(), paused = UUID()
+        try ledger.enqueue(id: personal, lessonID: lesson, destination: "chrome", automatic: false)
+        XCTAssertEqual(ledger.entries.first?.state, .held)
+        try ledger.enqueue(id: paused, lessonID: lesson, destination: "chrome")
+        try ledger.holdQueued()
+        try ledger.enqueue(id: personal, lessonID: lesson, destination: "chrome")
+        try ledger.resetQueue()
+        XCTAssertEqual(ledger.entries.count, 2)
+        XCTAssertTrue(try DeliveryLedger(directory: dir).entries.allSatisfy { $0.state == .held })
+        try ledger.forceEnqueue(id: personal, lessonID: lesson, destination: "chrome")
+        XCTAssertEqual(ledger.entries.first?.state, .queued)
+        try ledger.transition(id: personal, state: .preparing, detail: "upload")
+        XCTAssertThrowsError(try ledger.transition(id: personal, state: .held, detail: "too late"))
+    }
+
     func testShortCodeExpirationAttemptLimitAndDeviceProof() throws {
         let now = Date()
         var code = PairingChallenge(code: "012345", now: now)

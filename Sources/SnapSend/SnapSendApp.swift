@@ -78,6 +78,8 @@ final class WorkspaceModel: ObservableObject {
     }
     @Published var deliveryTarget = "chrome"
     @Published var autoSend = false
+    private var manualDeliveryIDs = Set<UUID>()
+    private func permitsDelivery(_ id: UUID) -> Bool { autoSend || manualDeliveryIDs.contains(id) }
     @Published var deliveryReport = "尚未绑定聊天"
     private var deliveryByID: [UUID: DeliveryEntry] = [:]
     @Published var deliveries: [DeliveryEntry] = [] {
@@ -251,7 +253,7 @@ final class WorkspaceModel: ObservableObject {
             showAlert(title: "课表目标优先", message: "当前正在上课的 Section 优先于手动选择。请在课后分配这些照片。", style: .warning); return
         }
         selectedPhotoIDs = ids; moveSelectedPhotos(to: lesson)
-        if send { for photo in records where ids.contains(photo.id) { sendSinglePhotoToAI(photo) }; enableDelivery() }
+        if send { selectedPhotoIDs = ids; batchSendSelectedToAI() }
     }
     func resolveTarget(now: Date = Date()) {
         guard let store else { return }
@@ -268,7 +270,7 @@ final class WorkspaceModel: ObservableObject {
                 boundLesson = catalog.activeLessonID
                 if pendingPromptToSend != nil { pendingPromptLesson = boundLesson }
             } else if boundLesson != catalog.activeLessonID || boundChat != (target?.chatURL ?? "") && deliveryTarget == "chrome" {
-                autoSend = false; browserTab = nil; browserPageStatus = ""; boundLesson = catalog.activeLessonID
+                autoSend = false; manualDeliveryIDs.removeAll(); browserTab = nil; browserPageStatus = ""; boundLesson = catalog.activeLessonID
                 boundChat = target?.chatURL ?? ""; boundDestination = boundChat.isEmpty ? "" : "chrome"
                 if oldSection != target?.id { pendingPromptToSend = nil }
                 deliveryReport = boundChat.isEmpty ? "选择 Section 并绑定聊天；照片会继续保存。" : "聊天已保存，打开对应 Chrome 页面后可开启发送。"
@@ -444,7 +446,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func finishLesson() {
-        autoSend = false
+        manualDeliveryIDs.removeAll(); autoSend = false
         do {
             try store?.activateLesson(nil); refreshCatalog()
             showAlert(title: "课堂已结束", message: "拍照已暂停归档，请在 AI 发送下课总结。", style: .info)
@@ -524,7 +526,7 @@ final class WorkspaceModel: ObservableObject {
                           detail: previousDelivery?.detail ?? "Mac 已保存并归档")
 
         if matchesTarget(item.sessionID), chatMatchesClass, let lessonID = item.sessionID {
-            try ledger?.enqueue(id: item.id, lessonID: lessonID, destination: deliveryTarget)
+            try ledger?.enqueue(id: item.id, lessonID: lessonID, destination: deliveryTarget, automatic: autoSend && header?.sendToAI != false)
             refreshDeliveries()
             if let delivery = deliveryByID[item.id] {
                 sendStatusToPhone(id: item.id, stage: delivery.state.rawValue, detail: delivery.detail)
@@ -755,8 +757,8 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == targetBundle }) else {
-            axReport = "请先打开所选的 ChatGPT App。"
-            showAlert(title: "应用未启动", message: "未检测到 ChatGPT 客户端进程，请先打开应用。", style: .warning)
+            axReport = "请先打开所选的 AI App。"
+            showAlert(title: "应用未启动", message: "未检测到所选 AI App，请先打开应用。", style: .warning)
             return
         }
         let root = AXUIElementCreateApplication(app.processIdentifier)
@@ -779,7 +781,7 @@ final class WorkspaceModel: ObservableObject {
     func selectDeliveryTarget(_ target: String) {
         guard ["chrome", "native"].contains(target), !nativeBusy, promptInFlight == nil,
               !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else { return }
-        autoSend = false; deliveryTarget = target; boundDestination = ""; boundChat = ""; browserTab = nil
+        autoSend = false; manualDeliveryIDs.removeAll(); deliveryTarget = target; boundDestination = ""; boundChat = ""; browserTab = nil
         if target == "chrome" { resolveTarget() }
         deliveryReport = target == "chrome" ? "已恢复 Section 的网页聊天，检查扩展连接后开启发送。" : "请打开 AI 专用聊天并绑定当前窗口。"
     }
@@ -833,6 +835,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func pauseDelivery() {
+        manualDeliveryIDs.removeAll()
         autoSend = false
         deliveryReport = "自动发送已暂停。"
         showAlert(title: "投递已暂停", message: "已暂停自动投递，新照片仅在 Mac 本地归档。", style: .info)
@@ -851,15 +854,18 @@ final class WorkspaceModel: ObservableObject {
             showAlert(title: "存在待核对照片", message: "请先核对异常照片后再开启自动发送。", style: .warning)
             return
         }
+        guard !nativeBusy, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
+            showAlert(title: "正在发送", message: "请等当前照片处理完成后再开启自动发送。", style: .info); return
+        }
         do {
-            for photo in records where matchesTarget(photo.sessionID) && stageOf(photo) == nil {
-                if let lesson = photo.sessionID { try ledger?.enqueue(id: photo.id, lessonID: lesson, destination: deliveryTarget) }
-            }
-            refreshDeliveries()
-        } catch { showAlert(title: "队列未保存", message: error.localizedDescription, style: .error); return }
-        autoSend = true
+            let previous = deliveries.filter { $0.state == .queued }.map { $0.id }
+            try ledger?.holdQueued(); refreshDeliveries()
+            for id in previous { sendStatusToPhone(id: id, stage: "held", detail: "旧照片仅保存，请手动选择发送") }
+        }
+        catch { showAlert(title: "队列未保存", message: error.localizedDescription, style: .error); return }
+        manualDeliveryIDs.removeAll(); autoSend = true
         deliveryReport = "自动发送已开启：仅投递当前课堂新照片。"
-        showAlert(title: "自动发送已开启", message: "新拍照的照片将自动投递至绑定的 ChatGPT 会话。", style: .success)
+        showAlert(title: "自动发送已开启", message: "仅自动投递开启后新收到的课堂照片。旧照片和仅保存照片需要你手动选择发送。", style: .success)
         pumpNative()
     }
 
@@ -868,7 +874,7 @@ final class WorkspaceModel: ObservableObject {
             guard let lesson = catalog.activeLessonID else { throw NativeDelivery.Failure("请先开始一节课。") }
             let app = try NativeDelivery.app(targetBundle)
             nativeWindow = try NativeDelivery.title(app)
-            autoSend = false; boundLesson = lesson; boundChat = nativeWindow; boundDestination = "native"; deliveryTarget = "native"
+            autoSend = false; manualDeliveryIDs.removeAll(); boundLesson = lesson; boundChat = nativeWindow; boundDestination = "native"; deliveryTarget = "native"
             deliveryReport = "已绑定窗口：\(nativeWindow)。"
             showAlert(title: "原生窗口已绑定", message: nativeWindow, style: .success)
         } catch {
@@ -909,16 +915,19 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func pumpNative() {
-        guard autoSend, deliveryTarget == "native", !nativeBusy,
-              let entry = deliveries.first(where: { $0.state == .queued && matchesTarget($0.lessonID) && $0.destination == "native" }),
+        guard deliveryTarget == "native", !nativeBusy,
+              !deliveries.contains(where: { matchesTarget($0.lessonID) && [.uncertain, .failed, .preparing, .submitting].contains($0.state) }),
+              let entry = deliveries.first(where: { $0.state == .queued && permitsDelivery($0.id) && matchesTarget($0.lessonID) && $0.destination == "native" }),
               let photo = records.first(where: { $0.id == entry.id }), photo.sessionID == entry.lessonID, let url = imageURL(photo) else { return }
         nativeBusy = true
         nativeTask = Task {
-            defer { nativeBusy = false }
+            defer { nativeBusy = false; manualDeliveryIDs.removeAll() }
             do {
                 try changeDelivery(entry.id, .preparing, "正在附加图片")
-                try await NativeDelivery.send(url: url, bundle: targetBundle, windowTitle: nativeWindow, submit: true) {
-                    guard self.autoSend, self.matchesTarget(entry.lessonID) else { throw NativeDelivery.Failure("发送已暂停。") }
+                try await NativeDelivery.send(url: url, bundle: targetBundle, windowTitle: nativeWindow, submit: true, beforePaste: {
+                    guard self.permitsDelivery(entry.id), self.matchesTarget(entry.lessonID) else { throw NativeDelivery.Failure("发送已暂停，未继续附图。") }
+                }) {
+                    guard self.permitsDelivery(entry.id), self.matchesTarget(entry.lessonID) else { throw NativeDelivery.Failure("发送已暂停。") }
                     try self.changeDelivery(entry.id, .submitting, "正在点击发送")
                 }
                 try changeDelivery(entry.id, .uncertain, "已点击发送；原生客户端回执待核对。")
@@ -965,11 +974,13 @@ final class WorkspaceModel: ObservableObject {
         if kind == "status" {
             let matching = message["tab"] as? Int == browserTab && message["url"] as? String == boundChat &&
                 boundLesson == catalog.activeLessonID && boundDestination == "chrome"
-            return ["ok": true, "version": 4, "versionString": SnapSendVersion, "usb": authenticated,
+            return ["ok": true, "version": 5, "versionString": SnapSendVersion, "usb": authenticated,
                     "lesson": targetDisplayName, "matching": matching, "focusRequested": browserFocusRequested, "targetURL": deliveryTarget == "chrome" ? boundChat : "", "section": targetSection?.id.uuidString ?? "",
-                    "auto": autoSend && matching, "review": deliveries.contains { matchesTarget($0.lessonID) && [.uncertain, .failed].contains($0.state) },
-                    "hasPrompt": matching && pendingPromptToSend != nil && pendingPromptLesson == catalog.activeLessonID && promptInFlight == nil,
-                    "queued": deliveries.filter { matchesTarget($0.lessonID) && $0.state == .queued }.count,
+                    "auto": (autoSend || !manualDeliveryIDs.isEmpty) && matching,
+                    "continuous": autoSend,
+                    "inflight": deliveries.contains { matchesTarget($0.lessonID) && [.preparing, .submitting].contains($0.state) }, "review": deliveries.contains { matchesTarget($0.lessonID) && [.uncertain, .failed].contains($0.state) },
+                    "hasPrompt": matching && autoSend && pendingPromptToSend != nil && pendingPromptLesson == catalog.activeLessonID && promptInFlight == nil,
+                    "queued": deliveries.filter { matchesTarget($0.lessonID) && $0.destination == "chrome" && $0.state == .queued && permitsDelivery($0.id) }.count,
                     "report": deliveryReport]
         }
 
@@ -1007,7 +1018,7 @@ final class WorkspaceModel: ObservableObject {
             guard promptInFlight == nil, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
                 return ["ok": false, "error": "请等待当前照片投递完成后再绑定。"]
             }
-            browserPageStatus = ""; autoSend = false; boundLesson = lesson; boundChat = url; browserTab = tab; boundDestination = "chrome"; deliveryTarget = "chrome"
+            browserPageStatus = ""; autoSend = false; manualDeliveryIDs.removeAll(); boundLesson = lesson; boundChat = url; browserTab = tab; boundDestination = "chrome"; deliveryTarget = "chrome"
             if var section = targetSection { section.chatURL = url; try? store?.updateSection(section); catalog = store?.catalog ?? catalog }
             deliveryReport = "已绑定 ChatGPT 聊天：\(url)"
             showAlert(title: "Chrome 聊天绑定成功", message: "当前课堂已成功绑定至 Chrome 标签页。", style: .success)
@@ -1018,7 +1029,7 @@ final class WorkspaceModel: ObservableObject {
         }
 
         if kind == "poll" {
-            guard autoSend, deliveryTarget == "chrome", message["tab"] as? Int == browserTab,
+            guard (autoSend || !manualDeliveryIDs.isEmpty), deliveryTarget == "chrome", message["tab"] as? Int == browserTab,
                   message["url"] as? String == boundChat, boundLesson == catalog.activeLessonID else {
                 return ["ok": true, "paused": true, "message": "等待绑定课堂并在 Mac 开启自动发送"]
             }
@@ -1026,8 +1037,8 @@ final class WorkspaceModel: ObservableObject {
                 return ["ok": true, "paused": true, "message": "正在投递或等待异常核对"]
             }
             guard promptInFlight == nil else { return ["ok": true, "paused": true, "message": "正在发送提示词"] }
-            let hasQueuedPhotos = deliveries.contains { $0.state == .queued && matchesTarget($0.lessonID) && $0.destination == "chrome" }
-            if let prompt = pendingPromptToSend, pendingPromptLesson == boundLesson,
+            let hasQueuedPhotos = deliveries.contains { $0.state == .queued && permitsDelivery($0.id) && matchesTarget($0.lessonID) && $0.destination == "chrome" }
+            if autoSend, let prompt = pendingPromptToSend, pendingPromptLesson == boundLesson,
                !pendingPromptIsSummary || !hasQueuedPhotos {
                 let id = pendingPromptID
                 promptInFlight = id
@@ -1043,7 +1054,7 @@ final class WorkspaceModel: ObservableObject {
                 }
                 return ["ok": true, "kind": "prompt", "id": id.uuidString, "text": prompt]
             }
-            guard let entry = deliveries.first(where: { $0.state == .queued && matchesTarget($0.lessonID) && $0.destination == "chrome" }),
+            guard let entry = deliveries.first(where: { $0.state == .queued && permitsDelivery($0.id) && matchesTarget($0.lessonID) && $0.destination == "chrome" }),
                   let photo = records.first(where: { $0.id == entry.id }), let url = imageURL(photo) else { return ["ok": true, "idle": true] }
             guard photo.sessionID == entry.lessonID else {
                 autoSend = false; deliveryReport = "照片归档与投递目标不一致，请重新打开 SnapSend 修复后再开启发送。"
@@ -1075,7 +1086,7 @@ final class WorkspaceModel: ObservableObject {
                   let entry = deliveries.first(where: { $0.id == id }), matchesTarget(entry.lessonID) else { return ["ok": false, "error": "投递绑定不匹配"] }
             do {
                 if kind == "submitting" {
-                    guard autoSend, boundLesson == catalog.activeLessonID else { return ["ok": false, "error": "发送已暂停。"] }
+                    guard permitsDelivery(id), boundLesson == catalog.activeLessonID else { return ["ok": false, "error": "发送已暂停。"] }
                     try changeDelivery(id, .submitting, "附件就绪，正在点击发送")
                 } else {
                     let result = message["state"] as? String
@@ -1083,6 +1094,7 @@ final class WorkspaceModel: ObservableObject {
                     let state: DeliveryState = result == "sent" && entry.state == .submitting ? .sent : .uncertain
                     try changeDelivery(id, state, message["detail"] as? String ?? "请核对聊天")
                     deliveryTimeout?.cancel()
+                    manualDeliveryIDs.remove(id)
                     if state != .sent {
                         autoSend = false
                         showAlert(title: "投递待核对", message: "已点击发送但未确认消息，请去 ChatGPT 确认。", style: .warning, actionTitle: "去核对") {
@@ -1234,6 +1246,7 @@ final class WorkspaceModel: ObservableObject {
     func resetQueue() {
         do {
             try ledger?.resetQueue()
+            manualDeliveryIDs.removeAll(); autoSend = false
             refreshDeliveries()
             showAlert(title: "投递队列已重置", message: "所有异常或卡滞条目已清除，已成功的历史记录已妥善保留。", style: .success)
         } catch {
@@ -1244,6 +1257,9 @@ final class WorkspaceModel: ObservableObject {
     // MARK: - Single Photo Send to AI & Batch Operations
 
     func sendSinglePhotoToAI(_ photo: PhotoRecord) {
+        guard !nativeBusy, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
+            showAlert(title: "正在投递", message: "请等当前图片完成后再选择单张发送。", style: .info); return
+        }
         guard let lessonID = photo.sessionID else {
             showAlert(title: "无法发送", message: "该照片未关联任何课堂。", style: .warning)
             return
@@ -1260,12 +1276,22 @@ final class WorkspaceModel: ObservableObject {
             try ledger?.forceEnqueue(id: photo.id, lessonID: lessonID, destination: deliveryTarget)
             refreshDeliveries()
             sendStatusToPhone(id: photo.id, stage: "queued", detail: "已单独加入投递队列")
-            autoSend = true
+            autoSend = false; manualDeliveryIDs = [photo.id]
             if deliveryTarget == "native" { pumpNative() }
             showAlert(title: "已加入投递队列", message: "该照片已单张加入队列，即将投递至 AI。", style: .success)
         } catch {
             showAlert(title: "发送失败", message: error.localizedDescription, style: .error)
         }
+    }
+
+    func holdPhoto(_ photo: PhotoRecord) {
+        do {
+            guard let lesson = photo.sessionID else { return }
+            if stageOf(photo) == nil { try ledger?.enqueue(id: photo.id, lessonID: lesson, destination: deliveryTarget, automatic: false) }
+            else { try ledger?.transition(id: photo.id, state: .held, detail: "仅保存，不自动发送") }
+            manualDeliveryIDs.remove(photo.id); refreshDeliveries()
+            sendStatusToPhone(id: photo.id, stage: "held", detail: "仅保存，不自动发送")
+        } catch { showAlert(title: "无法移出队列", message: "图片可能已开始上传，请先暂停投递并在 AI 核对。", style: .warning) }
     }
 
     func toggleSelectMode() {
@@ -1299,7 +1325,7 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         guard records.filter({ selectedPhotoIDs.contains($0.id) }).allSatisfy({ $0.sessionID == boundLesson }),
-              !deliveries.contains(where: { selectedPhotoIDs.contains($0.id) && [.preparing, .submitting].contains($0.state) }) else {
+              !nativeBusy, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
             showAlert(title: "无法批量排队", message: "请选择当前课堂照片，并等待正在发送的照片完成。", style: .warning)
             return
         }
@@ -1312,7 +1338,7 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             refreshDeliveries()
-            autoSend = true
+            autoSend = false; manualDeliveryIDs = selectedPhotoIDs
             if deliveryTarget == "native" { pumpNative() }
             showAlert(title: "批量发送已启动", message: "已将 \(count) 张选中的照片加入投递队列。", style: .success)
             isSelectMode = false
@@ -1324,7 +1350,7 @@ final class WorkspaceModel: ObservableObject {
 
     func batchDeleteSelected() {
         guard !selectedPhotoIDs.isEmpty else { return }
-        guard !deliveries.contains(where: { selectedPhotoIDs.contains($0.id) && [.preparing, .submitting].contains($0.state) }) else {
+        guard !nativeBusy, !deliveries.contains(where: { [.preparing, .submitting].contains($0.state) }) else {
             showAlert(title: "照片正在发送", message: "请等待投递完成后再删除。", style: .warning)
             return
         }
