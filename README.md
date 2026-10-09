@@ -2,6 +2,10 @@
 
 **拍下课堂，留在本地，送到 AI。**
 
+> 当前开发分支正在实现 **0.6.0 Aurora 重构**：固定 Section、课表目标和收件箱。公开下载仍为 0.5.1，下面安装说明对应已发布版本。新流程和验证见 [重构记录](docs/AURORA-REBUILD.zh-CN.md)。
+
+![Aurora 开发版：隔离示例数据](assets/screenshots/aurora-overview.png)
+
 SnapSend 是 macOS + iPhone 的课堂拍照工具：手机确认照片后通过 USB 传到 Mac，按「课程 → 每次上课」保存。Chrome 扩展可把照片发送到你明确绑定的 ChatGPT 聊天。
 
 手机到电脑不需要个人热点、校园网或云端中转。上传 ChatGPT 时，电脑仍需要联网。

@@ -66,7 +66,6 @@ final class PhoneModel: ObservableObject {
     }
     private func refresh() { photos = library?.photos ?? [] }
     func save(_ image: UIImage, context: LessonContext?, quality: Double = 0.9) {
-        guard let context else { errorMessage = "请先在 Mac 开始一节课"; return }
         guard let bytes = image.jpegData(compressionQuality: quality), let library else { errorMessage = "照片编码或队列初始化失败"; return }
         do {
             try library.save(bytes, context: context); refresh(); errorMessage = nil
@@ -407,7 +406,7 @@ struct PhoneView: View {
                     let group = filtered.filter { $0.context?.lesson.id == id }
                     VStack(alignment: .leading, spacing: 14) {
                         if !current {
-                            VStack(alignment: .leading, spacing: 4) { Text(group.first?.context?.courseName ?? "早期照片").font(.title3.bold()); if let context = group.first?.context { Text(context.lesson.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) } }
+                            VStack(alignment: .leading, spacing: 4) { Text(group.first?.context?.courseName ?? "收件箱 · 未分配").font(.title3.bold()); if let context = group.first?.context { Text(context.lesson.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) } }
                         }
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
                             ForEach(group.reversed()) { photo in
@@ -431,18 +430,18 @@ struct PhoneView: View {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             captureContext = model.activeContext; camera = true
                         } label: { Label("拍下这一页", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(.vertical, 3) }.buttonStyle(SnapPrimaryButton())
-                            .disabled(model.activeContext == nil || !UIImagePickerController.isSourceTypeAvailable(.camera))
-                        Text(model.activeContext == nil ? "在 Mac 开始课堂后即可拍照" : model.connected ? "确认后自动保存并传到 Mac" : "离线也能拍，连接后自动续传").font(.caption).foregroundStyle(.secondary)
+                            .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+                        Text(model.activeContext == nil ? "确认后保存；未选 Section 时进入 Mac 收件箱" : model.connected ? "确认后自动保存并传到 Mac" : "离线也能拍，连接后自动续传").font(.caption).foregroundStyle(.secondary)
                     }.padding(15).modifier(SnapGlass()).padding(.horizontal, 20).padding(.bottom, 10)
                 }
             }
     }
     private var classroomCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Label(model.activeContext == nil ? "等待开课" : "当前课堂", systemImage: "book.closed.fill").font(.caption.weight(.semibold)).foregroundStyle(SnapTheme.blue); Spacer(); SnapMark(size: 36) }
+            HStack { Label(model.activeContext == nil ? "收件箱模式" : "当前课堂", systemImage: "book.closed.fill").font(.caption.weight(.semibold)).foregroundStyle(SnapTheme.blue); Spacer(); SnapMark(size: 36) }
             Text(model.activeContext?.courseName ?? "下一节，值得记录").font(.system(size: 27, weight: .bold, design: .rounded))
             if let context = model.activeContext { Text(context.lesson.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.subheadline).foregroundStyle(.secondary) }
-            else { Text("在 Mac 选择课程并开始上课").font(.subheadline).foregroundStyle(.secondary) }
+            else { Text("随时拍照；在 Mac 选择 Section 后自动分类").font(.subheadline).foregroundStyle(.secondary) }
             HStack(spacing: 24) {
                 metric("已拍摄", value: filtered.count)
                 metric("Mac 已保存", value: filtered.filter(\.receivedByMac).count)
