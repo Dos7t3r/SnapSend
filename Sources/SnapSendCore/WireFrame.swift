@@ -49,13 +49,17 @@ public struct WireDecoder {
 }
 
 public enum WireEncoder {
-    public static func encode(_ header: WireHeader, body: Data = Data()) throws -> Data {
-        guard header.byteCount == body.count else { throw WireDecoder.WireError.invalidHeader }
+    public static func metadata(_ header: WireHeader) throws -> Data {
         let metadata = try JSONEncoder().encode(header)
         guard metadata.count <= 4096 else { throw WireDecoder.WireError.invalidHeader }
         let length = UInt32(metadata.count)
         var result = Data([UInt8((length >> 24) & 255), UInt8((length >> 16) & 255), UInt8((length >> 8) & 255), UInt8(length & 255)])
-        result.append(metadata); result.append(body)
+        result.append(metadata); return result
+    }
+    public static func encode(_ header: WireHeader, body: Data = Data()) throws -> Data {
+        guard header.byteCount == body.count else { throw WireDecoder.WireError.invalidHeader }
+        var result = try metadata(header)
+        result.append(body)
         return result
     }
 }

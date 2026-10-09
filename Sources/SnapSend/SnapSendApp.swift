@@ -69,12 +69,29 @@ final class WorkspaceModel: ObservableObject {
     @Published var axReport = "尚未检查 ChatGPT"
     @Published var targetBundle = "com.openai.chat"
     @Published var port = "27183"
+    @Published var usbMode = UserDefaults.standard.string(forKey: "SnapSendUSBMode") == "pad" ? "pad" : "phone" {
+        didSet { UserDefaults.standard.set(usbMode, forKey: "SnapSendUSBMode") }
+    }
     @Published var pairingCode = ""
     @Published var pairingRequired = false
     @Published var catalog = CourseCatalog()
     @Published var selectedLesson: UUID?
     @Published var autoReconnect: Bool = true {
         didSet { UserDefaults.standard.set(autoReconnect, forKey: "SnapSendAutoReconnect") }
+    }
+    @Published var usbDevices: [String] = []
+    @Published var usbDeviceID = ""
+    @Published var findingUSB = false
+    func findUSBDevices() {
+        guard !findingUSB else { return }; findingUSB = true
+        Task {
+            defer { findingUSB = false }
+            do {
+                usbDevices = try await Task.detached(priority: .utility) { try USBDevices.list() }.value
+                if usbDevices.count == 1 { usbDeviceID = usbDevices[0] }
+                else if !usbDevices.contains(usbDeviceID) { usbDeviceID = "" }
+            } catch { notice = "无法读取 USB 设备，请确认数据线与信任状态。" }
+        }
     }
     @Published var deliveryTarget = "chrome"
     @Published var autoSend = false
@@ -514,7 +531,8 @@ final class WorkspaceModel: ObservableObject {
         let busy = promptInFlight != nil || deliveries.contains { [.preparing, .submitting].contains($0.state) }
         let route = try records.first(where: { $0.id == header?.id })?.sessionID ?? store.routeLesson(activate: !busy)
         let item = try store.save(data, id: header?.id ?? UUID(), expectedHash: header?.sha256,
-                                  sessionID: route, capturedAt: header?.capturedAt)
+                                  sessionID: route, capturedAt: header?.capturedAt,
+                                  fileExtension: CGImageSourceGetType(source) as String? == "public.png" ? "png" : "jpg")
         records = store.records; catalog = store.catalog
         if selectedLesson == nil || selectedLesson == item.sessionID {
             selected = item.id; selectedLesson = item.sessionID
@@ -569,8 +587,12 @@ final class WorkspaceModel: ObservableObject {
             return
         }
 
+        if usbMode == "pad" && usbDeviceID.isEmpty {
+            connectionStatus = "请选择 USB 设备；只插 iPad 时点击查找即可自动选择。"
+            findUSBDevices(); return
+        }
         let process = USBProxyProcess.make(executable: URL(fileURLWithPath: tool),
-            arguments: ["-l", "-s", "127.0.0.1", "\(number):27183"])
+            arguments: ["-l", "-s", "127.0.0.1"] + (usbDeviceID.isEmpty ? [] : ["-u", usbDeviceID]) + ["\(number):\(usbMode == "pad" ? 27184 : 27183)"])
         process.terminationHandler = { [weak self, weak process] _ in
             Task { @MainActor in
                 guard let self, let process, self.bridge === process else { return }
@@ -585,7 +607,7 @@ final class WorkspaceModel: ObservableObject {
             scheduleAutoReconnect(); return
         }
         bridge = process
-        connectionStatus = isAutoRetry ? "正在自动重连 iPhone…" : "正在启动 USB 桥接…"
+        connectionStatus = isAutoRetry ? "正在自动重连 USB 设备…" : "正在启动 USB 桥接…"
         bridgeStartup = Task { [weak self, weak process] in
             do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
             guard let self, let process, self.bridge === process, process.isRunning else { return }
@@ -1384,7 +1406,7 @@ final class WorkspaceModel: ObservableObject {
         for id in selectedPhotoIDs {
             if let photo = records.first(where: { $0.id == id }) {
                 let sourceURL = store.url(for: photo)
-                let destURL = targetFolder.appendingPathComponent("SnapSend-\(photo.id.uuidString).jpg")
+                let destURL = targetFolder.appendingPathComponent("SnapSend-\(photo.id.uuidString).\(sourceURL.pathExtension)")
                 if (try? FileManager.default.copyItem(at: sourceURL, to: destURL)) != nil {
                     successCount += 1
                 }

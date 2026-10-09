@@ -10,7 +10,19 @@ struct SettingsScreen: View {
             Text("每条连接独立检查。即使 AI 暂时不能发送，USB 收到的原图仍会保存。").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Aurora.Space.gap) {
-                    group("iPhone · USB", symbol: "cable.connector", color: Aurora.Colors.phone, order: 0) {
+                    group("iPhone / iPad · USB", symbol: "cable.connector", color: Aurora.Colors.phone, order: 0) {
+                        Picker("USB 来源", selection: $model.usbMode) { Text("iPhone 拍照").tag("phone"); Text("iPad 截图分享").tag("pad") }.pickerStyle(.segmented)
+                            .onChange(of: model.usbMode) { _, _ in model.disconnect(userInitiated: true, allowAutoReconnect: false) }
+                        HStack {
+                            Picker("USB 设备", selection: $model.usbDeviceID) {
+                                Text("未选择设备").tag("")
+                                ForEach(model.usbDevices, id: \.self) { id in Text("USB 设备 · " + id.suffix(8)).tag(id) }
+                            }.onChange(of: model.usbDeviceID) { _, _ in model.disconnect(userInitiated: true, allowAutoReconnect: false) }
+                            Button(model.findingUSB ? "查找中…" : "查找设备") { model.findUSBDevices() }.buttonStyle(AuroraInlineButton()).disabled(model.findingUSB)
+                        }
+                        if model.usbMode == "pad" {
+                            Text("iPad 截图后点分享 → SnapSend；分享面板保持打开，再点击重新连接。首版仅保存到 Mac，可在 Mac 手动选图发送。多台设备插线时先拔掉 iPhone。").font(Aurora.TypeStyle.caption)
+                        }
                         Text(model.connectionStatus).font(Aurora.TypeStyle.body)
                         Text("1. 插上数据线 → 2. 解锁并打开手机 SnapSend → 3. 首次连接输入手机显示的 6 位码。").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary)
                         if model.pairingRequired { HStack { TextField("6 位验证码", text: $model.pairingCode).textFieldStyle(.roundedBorder); Button("验证") { model.submitPairing() }.buttonStyle(AuroraInlineButton()) } }

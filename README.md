@@ -4,7 +4,7 @@
 
 > 当前开发分支正在实现 **0.6.0 Aurora 重构**：固定 Section、课表目标和收件箱。公开下载仍为 0.5.1，下面安装说明对应已发布版本。新流程和验证见 [重构记录](docs/AURORA-REBUILD.zh-CN.md)；手机内置相机、玻璃 Dock 和真机检查见 [手机升级记录](docs/PHONE-AURORA.zh-CN.md)；点击范围、滚动、最小窗口和动效参数见 [Mac 交互验证](docs/MAC-INTERACTION-POLISH.zh-CN.md)；手机拍摄页布局修补与验收见 [拍摄页报告](docs/PHONE-CAPTURE-POLISH.zh-CN.md)。
 
-本轮发送边界、私人照片与网页等待恢复见 [投递修复记录](docs/DELIVERY-CONTROLS.zh-CN.md)；计划中的截图分享入口见 [iPad USB 分享方案](docs/IPAD-SHARE-DESIGN.zh-CN.md)。iPad App 尚未实现。
+本轮发送边界、私人照片与网页等待恢复见 [投递修复记录](docs/DELIVERY-CONTROLS.zh-CN.md)；计划中的截图分享入口见 [iPad USB 分享方案](docs/IPAD-SHARE-DESIGN.zh-CN.md)。iPad 已有独立 USB 分享归档原型，已安装并取得真机反馈；尚未自动发送 AI，使用和验证见 [iPad 原型记录](docs/IPAD-PROTOTYPE.zh-CN.md)。
 
 ![Aurora 开发版：隔离示例数据](assets/screenshots/aurora-overview.png)
 

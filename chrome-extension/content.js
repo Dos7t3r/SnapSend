@@ -63,7 +63,7 @@
     const oldImages = scope.querySelectorAll('img').length;
     const oldRemoves = [...scope.querySelectorAll('button')].filter(b => /remove|移除|删除附件/i.test(b.getAttribute('aria-label') || '')).length;
     const bytes = Uint8Array.from(atob(job.jpeg), c => c.charCodeAt(0));
-    const file = new File([bytes], job.filename, {type:'image/jpeg'});
+    const file = new File([bytes], job.filename, {type:job.filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg'});
     const transfer = new DataTransfer(); transfer.items.add(file);
     staged = {id: job.id, url: location.href, oldImages, oldRemoves, filename: job.filename};
     input.focus();

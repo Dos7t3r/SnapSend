@@ -1,0 +1,524 @@
+// !$*UTF8*$!
+{
+    "archiveVersion" = "1";
+    "classes" = {
+    };
+    "objectVersion" = "56";
+    "objects" = {
+        "E49B157EC527DB54A14E2663" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "folder.assetcatalog";
+            "path" = "../iOS/Assets.xcassets";
+            "sourceTree" = "<group>";
+        };
+        "FD0F652FFE0B4A054052A9CB" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.xcconfig";
+            "path" = "../iOS/Signing.xcconfig";
+            "sourceTree" = "<group>";
+        };
+        "3E886EB306400DE1EDA64EE2" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "SnapSendPad.swift";
+            "sourceTree" = "<group>";
+        };
+        "4125D09B983A2603C1B3CE66" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "../Sources/SnapSend/SnapTheme.swift";
+            "sourceTree" = "<group>";
+        };
+        "F06EC49B7EB1E32DC37D5932" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "ShareViewController.swift";
+            "sourceTree" = "<group>";
+        };
+        "CEFA88381BF0271C0AA80515" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "ShareModel.swift";
+            "sourceTree" = "<group>";
+        };
+        "6E49E5DDA17C4B9A7D1C52A4" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "ShareTransport.swift";
+            "sourceTree" = "<group>";
+        };
+        "FC346EA9E0D051978D8CEC9C" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "../Sources/SnapSendCore/WireFrame.swift";
+            "sourceTree" = "<group>";
+        };
+        "F94AB6F9AEAD84A88BBE70CC" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "../Sources/SnapSendCore/Pairing.swift";
+            "sourceTree" = "<group>";
+        };
+        "81CD225D0E3C78A605EC667D" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "../Sources/SnapSendCore/CourseCatalog.swift";
+            "sourceTree" = "<group>";
+        };
+        "23CCDBAB9049E4E1CF471574" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "../Sources/SnapSendCore/ShareInbox.swift";
+            "sourceTree" = "<group>";
+        };
+        "6EE82C13BDA4CBC862EA31B4" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Tests/ShareTests.swift";
+            "sourceTree" = "<group>";
+        };
+        "A45077BB642965C51671570D" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.plist.xml";
+            "path" = "ShareInfo.plist";
+            "sourceTree" = "<group>";
+        };
+        "BD091873CD64521D09BCC835" = {
+            "isa" = "PBXFileReference";
+            "explicitFileType" = "wrapper.app-extension";
+            "path" = "SnapSendShare.appex";
+            "sourceTree" = "BUILT_PRODUCTS_DIR";
+        };
+        "FE6240B3F77174004E24E9A9" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F06EC49B7EB1E32DC37D5932";
+        };
+        "4ED86260DDD3714A3CC8A959" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "CEFA88381BF0271C0AA80515";
+        };
+        "BC8F9E18CE5C5750DC4E75E2" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "6E49E5DDA17C4B9A7D1C52A4";
+        };
+        "C5D68D42C3C758087A4B3231" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "4125D09B983A2603C1B3CE66";
+        };
+        "1230596530A09217734EA702" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "FC346EA9E0D051978D8CEC9C";
+        };
+        "BD51EC647614B975C9EA5216" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F94AB6F9AEAD84A88BBE70CC";
+        };
+        "1F0BD3E84D5379C11FE297ED" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "81CD225D0E3C78A605EC667D";
+        };
+        "68392BA0DC8CCCCD148EB6F2" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "23CCDBAB9049E4E1CF471574";
+        };
+        "B24B4F07248C7E521FB1F212" = {
+            "isa" = "PBXSourcesBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ("FE6240B3F77174004E24E9A9", "4ED86260DDD3714A3CC8A959", "BC8F9E18CE5C5750DC4E75E2", "C5D68D42C3C758087A4B3231", "1230596530A09217734EA702", "BD51EC647614B975C9EA5216", "1F0BD3E84D5379C11FE297ED", "68392BA0DC8CCCCD148EB6F2");
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "9FC191EC3F2D6C35BC69DC17" = {
+            "isa" = "PBXFrameworksBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ();
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "9C47977CA43DAA83CC9F54A1" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "E49B157EC527DB54A14E2663";
+        };
+        "7D512F1DF84FEAB43F54154C" = {
+            "isa" = "PBXResourcesBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ("9C47977CA43DAA83CC9F54A1");
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "A990FDFEEDBF6EFCBECE733C" = {
+            "isa" = "XCBuildConfiguration";
+            "baseConfigurationReference" = "FD0F652FFE0B4A054052A9CB";
+            "buildSettings" = {
+                "PRODUCT_NAME" = "$(TARGET_NAME)";
+                "PRODUCT_BUNDLE_IDENTIFIER" = "com.snapsend.prototype.pad.share";
+                "CODE_SIGN_STYLE" = "Automatic";
+                "DEVELOPMENT_TEAM" = "$(SNAPSEND_DEVELOPMENT_TEAM)";
+                "CURRENT_PROJECT_VERSION" = "1";
+                "MARKETING_VERSION" = "0.6.0";
+                "TARGETED_DEVICE_FAMILY" = "2";
+                "GENERATE_INFOPLIST_FILE" = "YES";
+                "SWIFT_VERSION" = "5.0";
+                "IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+                "SDKROOT" = "iphoneos";
+                "ALWAYS_SEARCH_USER_PATHS" = "NO";
+                "SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+                "ENABLE_TESTABILITY" = "YES";
+                "INFOPLIST_FILE" = "ShareInfo.plist";
+                "APPLICATION_EXTENSION_API_ONLY" = "YES";
+                "SKIP_INSTALL" = "YES";
+                "ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+            };
+            "name" = "Debug";
+        };
+        "FF7556D5EBB7DD25148C4CC5" = {
+            "isa" = "XCBuildConfiguration";
+            "baseConfigurationReference" = "FD0F652FFE0B4A054052A9CB";
+            "buildSettings" = {
+                "PRODUCT_NAME" = "$(TARGET_NAME)";
+                "PRODUCT_BUNDLE_IDENTIFIER" = "com.snapsend.prototype.pad.share";
+                "CODE_SIGN_STYLE" = "Automatic";
+                "DEVELOPMENT_TEAM" = "$(SNAPSEND_DEVELOPMENT_TEAM)";
+                "CURRENT_PROJECT_VERSION" = "1";
+                "MARKETING_VERSION" = "0.6.0";
+                "TARGETED_DEVICE_FAMILY" = "2";
+                "GENERATE_INFOPLIST_FILE" = "YES";
+                "SWIFT_VERSION" = "5.0";
+                "IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+                "SDKROOT" = "iphoneos";
+                "ALWAYS_SEARCH_USER_PATHS" = "NO";
+                "SWIFT_OPTIMIZATION_LEVEL" = "-O";
+                "ENABLE_TESTABILITY" = "NO";
+                "INFOPLIST_FILE" = "ShareInfo.plist";
+                "APPLICATION_EXTENSION_API_ONLY" = "YES";
+                "SKIP_INSTALL" = "YES";
+                "ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+            };
+            "name" = "Release";
+        };
+        "F4D078F98F516E73318BD09E" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("A990FDFEEDBF6EFCBECE733C", "FF7556D5EBB7DD25148C4CC5");
+            "defaultConfigurationIsVisible" = "0";
+            "defaultConfigurationName" = "Release";
+        };
+        "7F4F0F9FCDB3BD41AF62178E" = {
+            "isa" = "PBXNativeTarget";
+            "buildConfigurationList" = "F4D078F98F516E73318BD09E";
+            "buildPhases" = ("B24B4F07248C7E521FB1F212", "9FC191EC3F2D6C35BC69DC17", "7D512F1DF84FEAB43F54154C");
+            "buildRules" = ();
+            "dependencies" = ();
+            "name" = "SnapSendShare";
+            "productName" = "SnapSendShare";
+            "productReference" = "BD091873CD64521D09BCC835";
+            "productType" = "com.apple.product-type.app-extension";
+        };
+        "6F6776F8C13F50D4BF50B9C6" = {
+            "isa" = "PBXFileReference";
+            "explicitFileType" = "wrapper.application";
+            "path" = "SnapSendPad.app";
+            "sourceTree" = "BUILT_PRODUCTS_DIR";
+        };
+        "B0D288760B25EF03CDE84FFE" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "3E886EB306400DE1EDA64EE2";
+        };
+        "56D91FF35255FCF89EC54DE8" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "4125D09B983A2603C1B3CE66";
+        };
+        "A11E7A6710F3D5691499000B" = {
+            "isa" = "PBXSourcesBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ("B0D288760B25EF03CDE84FFE", "56D91FF35255FCF89EC54DE8");
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "9EC600362E082A5817E7A356" = {
+            "isa" = "PBXFrameworksBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ();
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "B7784199EEC104195FDAE316" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "E49B157EC527DB54A14E2663";
+        };
+        "AFD18CCF36A24BD19339149C" = {
+            "isa" = "PBXResourcesBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ("B7784199EEC104195FDAE316");
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "5320B6F6D87DB176DDFEC355" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "BD091873CD64521D09BCC835";
+            "settings" = {
+                "ATTRIBUTES" = ("RemoveHeadersOnCopy");
+            };
+        };
+        "8A1EED22144C3F04485A69EE" = {
+            "isa" = "PBXCopyFilesBuildPhase";
+            "buildActionMask" = "2147483647";
+            "dstPath" = "";
+            "dstSubfolderSpec" = "13";
+            "files" = ("5320B6F6D87DB176DDFEC355");
+            "name" = "Embed App Extensions";
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "1ED6E7F9CCCDB9C2C72A110E" = {
+            "isa" = "PBXContainerItemProxy";
+            "containerPortal" = "244210E48437B6556980A702";
+            "proxyType" = "1";
+            "remoteGlobalIDString" = "7F4F0F9FCDB3BD41AF62178E";
+            "remoteInfo" = "SnapSendShare";
+        };
+        "5A596635C6865427EAE3B439" = {
+            "isa" = "PBXTargetDependency";
+            "target" = "7F4F0F9FCDB3BD41AF62178E";
+            "targetProxy" = "1ED6E7F9CCCDB9C2C72A110E";
+        };
+        "7E129B17C5D9B332829B04BA" = {
+            "isa" = "XCBuildConfiguration";
+            "baseConfigurationReference" = "FD0F652FFE0B4A054052A9CB";
+            "buildSettings" = {
+                "PRODUCT_NAME" = "$(TARGET_NAME)";
+                "PRODUCT_BUNDLE_IDENTIFIER" = "com.snapsend.prototype.pad";
+                "CODE_SIGN_STYLE" = "Automatic";
+                "DEVELOPMENT_TEAM" = "$(SNAPSEND_DEVELOPMENT_TEAM)";
+                "CURRENT_PROJECT_VERSION" = "1";
+                "MARKETING_VERSION" = "0.6.0";
+                "TARGETED_DEVICE_FAMILY" = "2";
+                "GENERATE_INFOPLIST_FILE" = "YES";
+                "SWIFT_VERSION" = "5.0";
+                "IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+                "SDKROOT" = "iphoneos";
+                "ALWAYS_SEARCH_USER_PATHS" = "NO";
+                "SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+                "ENABLE_TESTABILITY" = "YES";
+                "ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+                "INFOPLIST_KEY_CFBundleDisplayName" = "SnapSend Pad";
+                "INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
+                "INFOPLIST_KEY_UILaunchScreen_Generation" = "YES";
+                "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+            };
+            "name" = "Debug";
+        };
+        "5A4AFE2B8CD1D7CA435EC3C7" = {
+            "isa" = "XCBuildConfiguration";
+            "baseConfigurationReference" = "FD0F652FFE0B4A054052A9CB";
+            "buildSettings" = {
+                "PRODUCT_NAME" = "$(TARGET_NAME)";
+                "PRODUCT_BUNDLE_IDENTIFIER" = "com.snapsend.prototype.pad";
+                "CODE_SIGN_STYLE" = "Automatic";
+                "DEVELOPMENT_TEAM" = "$(SNAPSEND_DEVELOPMENT_TEAM)";
+                "CURRENT_PROJECT_VERSION" = "1";
+                "MARKETING_VERSION" = "0.6.0";
+                "TARGETED_DEVICE_FAMILY" = "2";
+                "GENERATE_INFOPLIST_FILE" = "YES";
+                "SWIFT_VERSION" = "5.0";
+                "IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+                "SDKROOT" = "iphoneos";
+                "ALWAYS_SEARCH_USER_PATHS" = "NO";
+                "SWIFT_OPTIMIZATION_LEVEL" = "-O";
+                "ENABLE_TESTABILITY" = "NO";
+                "ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+                "INFOPLIST_KEY_CFBundleDisplayName" = "SnapSend Pad";
+                "INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
+                "INFOPLIST_KEY_UILaunchScreen_Generation" = "YES";
+                "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+            };
+            "name" = "Release";
+        };
+        "B8F3E9C262A76CBA7A46CE4D" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("7E129B17C5D9B332829B04BA", "5A4AFE2B8CD1D7CA435EC3C7");
+            "defaultConfigurationIsVisible" = "0";
+            "defaultConfigurationName" = "Release";
+        };
+        "FB57447FC7776770C40785D5" = {
+            "isa" = "PBXNativeTarget";
+            "buildConfigurationList" = "B8F3E9C262A76CBA7A46CE4D";
+            "buildPhases" = ("A11E7A6710F3D5691499000B", "9EC600362E082A5817E7A356", "AFD18CCF36A24BD19339149C", "8A1EED22144C3F04485A69EE");
+            "buildRules" = ();
+            "dependencies" = ("5A596635C6865427EAE3B439");
+            "name" = "SnapSendPad";
+            "productName" = "SnapSendPad";
+            "productReference" = "6F6776F8C13F50D4BF50B9C6";
+            "productType" = "com.apple.product-type.application";
+        };
+        "9CE71FB8DBA75CFF8F55BDCF" = {
+            "isa" = "PBXFileReference";
+            "explicitFileType" = "wrapper.cfbundle";
+            "path" = "ShareTests.xctest";
+            "sourceTree" = "BUILT_PRODUCTS_DIR";
+        };
+        "5DAB20CAD92429BC00807F37" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "6EE82C13BDA4CBC862EA31B4";
+        };
+        "2504D27155EC79CE95FAD9DC" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "6E49E5DDA17C4B9A7D1C52A4";
+        };
+        "C74E2E9AA6FF8ED807668BE2" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "CEFA88381BF0271C0AA80515";
+        };
+        "CFB1E4C24CC3DE3F89DECEAE" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F06EC49B7EB1E32DC37D5932";
+        };
+        "04F4D0EEAE58FDB615B8EDFF" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "4125D09B983A2603C1B3CE66";
+        };
+        "E57B9BAF5FF9E84757620CB9" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "FC346EA9E0D051978D8CEC9C";
+        };
+        "EEB7C1246321F35AE14515B5" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F94AB6F9AEAD84A88BBE70CC";
+        };
+        "21FDAE9B466DAAD7DBF94FC7" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "81CD225D0E3C78A605EC667D";
+        };
+        "2965E336B2FB82EC56534638" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "23CCDBAB9049E4E1CF471574";
+        };
+        "C1C8F07DC5700EB0492C8C8B" = {
+            "isa" = "PBXSourcesBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ("5DAB20CAD92429BC00807F37", "2504D27155EC79CE95FAD9DC", "C74E2E9AA6FF8ED807668BE2", "CFB1E4C24CC3DE3F89DECEAE", "04F4D0EEAE58FDB615B8EDFF", "E57B9BAF5FF9E84757620CB9", "EEB7C1246321F35AE14515B5", "21FDAE9B466DAAD7DBF94FC7", "2965E336B2FB82EC56534638");
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "21F2DFF954AD559C64D9A678" = {
+            "isa" = "PBXFrameworksBuildPhase";
+            "buildActionMask" = "2147483647";
+            "files" = ();
+            "runOnlyForDeploymentPostprocessing" = "0";
+        };
+        "84DAFD72821D0A4721C58C7B" = {
+            "isa" = "PBXContainerItemProxy";
+            "containerPortal" = "244210E48437B6556980A702";
+            "proxyType" = "1";
+            "remoteGlobalIDString" = "FB57447FC7776770C40785D5";
+            "remoteInfo" = "SnapSendPad";
+        };
+        "5FA2A5D22A5AB9226E59123B" = {
+            "isa" = "PBXTargetDependency";
+            "target" = "FB57447FC7776770C40785D5";
+            "targetProxy" = "84DAFD72821D0A4721C58C7B";
+        };
+        "97CF8EC3F245D4B2DA548F6C" = {
+            "isa" = "XCBuildConfiguration";
+            "baseConfigurationReference" = "FD0F652FFE0B4A054052A9CB";
+            "buildSettings" = {
+                "PRODUCT_NAME" = "$(TARGET_NAME)";
+                "PRODUCT_BUNDLE_IDENTIFIER" = "com.snapsend.prototype.pad.tests";
+                "CODE_SIGN_STYLE" = "Automatic";
+                "DEVELOPMENT_TEAM" = "$(SNAPSEND_DEVELOPMENT_TEAM)";
+                "CURRENT_PROJECT_VERSION" = "1";
+                "MARKETING_VERSION" = "0.6.0";
+                "TARGETED_DEVICE_FAMILY" = "2";
+                "GENERATE_INFOPLIST_FILE" = "YES";
+                "SWIFT_VERSION" = "5.0";
+                "IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+                "SDKROOT" = "iphoneos";
+                "ALWAYS_SEARCH_USER_PATHS" = "NO";
+                "SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+                "ENABLE_TESTABILITY" = "YES";
+                "CODE_SIGNING_ALLOWED" = "NO";
+                "TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/SnapSendPad.app/SnapSendPad";
+                "BUNDLE_LOADER" = "$(TEST_HOST)";
+            };
+            "name" = "Debug";
+        };
+        "6A41185CD074BB6923709B77" = {
+            "isa" = "XCBuildConfiguration";
+            "baseConfigurationReference" = "FD0F652FFE0B4A054052A9CB";
+            "buildSettings" = {
+                "PRODUCT_NAME" = "$(TARGET_NAME)";
+                "PRODUCT_BUNDLE_IDENTIFIER" = "com.snapsend.prototype.pad.tests";
+                "CODE_SIGN_STYLE" = "Automatic";
+                "DEVELOPMENT_TEAM" = "$(SNAPSEND_DEVELOPMENT_TEAM)";
+                "CURRENT_PROJECT_VERSION" = "1";
+                "MARKETING_VERSION" = "0.6.0";
+                "TARGETED_DEVICE_FAMILY" = "2";
+                "GENERATE_INFOPLIST_FILE" = "YES";
+                "SWIFT_VERSION" = "5.0";
+                "IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+                "SDKROOT" = "iphoneos";
+                "ALWAYS_SEARCH_USER_PATHS" = "NO";
+                "SWIFT_OPTIMIZATION_LEVEL" = "-O";
+                "ENABLE_TESTABILITY" = "NO";
+                "CODE_SIGNING_ALLOWED" = "NO";
+                "TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/SnapSendPad.app/SnapSendPad";
+                "BUNDLE_LOADER" = "$(TEST_HOST)";
+            };
+            "name" = "Release";
+        };
+        "520921E9C981007F9FD7235B" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("97CF8EC3F245D4B2DA548F6C", "6A41185CD074BB6923709B77");
+            "defaultConfigurationIsVisible" = "0";
+            "defaultConfigurationName" = "Release";
+        };
+        "E7AD63C94A7B20B258DE6C3A" = {
+            "isa" = "PBXNativeTarget";
+            "buildConfigurationList" = "520921E9C981007F9FD7235B";
+            "buildPhases" = ("C1C8F07DC5700EB0492C8C8B", "21F2DFF954AD559C64D9A678");
+            "buildRules" = ();
+            "dependencies" = ("5FA2A5D22A5AB9226E59123B");
+            "name" = "ShareTests";
+            "productName" = "ShareTests";
+            "productReference" = "9CE71FB8DBA75CFF8F55BDCF";
+            "productType" = "com.apple.product-type.bundle.unit-test";
+        };
+        "0A3E27B8CA818264D75C8D81" = {
+            "isa" = "PBXGroup";
+            "children" = ("BD091873CD64521D09BCC835", "6F6776F8C13F50D4BF50B9C6", "9CE71FB8DBA75CFF8F55BDCF");
+            "name" = "Products";
+            "sourceTree" = "<group>";
+        };
+        "AD936FCBED631FA67E05C3EA" = {
+            "isa" = "PBXGroup";
+            "children" = ("3E886EB306400DE1EDA64EE2", "4125D09B983A2603C1B3CE66", "F06EC49B7EB1E32DC37D5932", "CEFA88381BF0271C0AA80515", "6E49E5DDA17C4B9A7D1C52A4", "FC346EA9E0D051978D8CEC9C", "F94AB6F9AEAD84A88BBE70CC", "81CD225D0E3C78A605EC667D", "23CCDBAB9049E4E1CF471574", "6EE82C13BDA4CBC862EA31B4", "A45077BB642965C51671570D", "E49B157EC527DB54A14E2663", "FD0F652FFE0B4A054052A9CB", "0A3E27B8CA818264D75C8D81");
+            "sourceTree" = "<group>";
+        };
+        "73EBF6644258C120893E685D" = {
+            "isa" = "XCBuildConfiguration";
+            "buildSettings" = {
+            };
+            "name" = "Debug";
+        };
+        "0B0C687DF8B6B8DC790B519C" = {
+            "isa" = "XCBuildConfiguration";
+            "buildSettings" = {
+            };
+            "name" = "Release";
+        };
+        "76F8DEC3DFE0BDB465198890" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("73EBF6644258C120893E685D", "0B0C687DF8B6B8DC790B519C");
+            "defaultConfigurationIsVisible" = "0";
+            "defaultConfigurationName" = "Release";
+        };
+        "244210E48437B6556980A702" = {
+            "isa" = "PBXProject";
+            "attributes" = {
+                "LastUpgradeCheck" = "2700";
+            };
+            "buildConfigurationList" = "76F8DEC3DFE0BDB465198890";
+            "compatibilityVersion" = "Xcode 14.0";
+            "developmentRegion" = "zh-Hans";
+            "hasScannedForEncodings" = "0";
+            "knownRegions" = ("zh-Hans", "en", "Base");
+            "mainGroup" = "AD936FCBED631FA67E05C3EA";
+            "productRefGroup" = "0A3E27B8CA818264D75C8D81";
+            "projectDirPath" = "";
+            "projectRoot" = "";
+            "targets" = ("7F4F0F9FCDB3BD41AF62178E", "FB57447FC7776770C40785D5", "E7AD63C94A7B20B258DE6C3A");
+        };
+    };
+    "rootObject" = "244210E48437B6556980A702";
+}
