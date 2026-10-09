@@ -461,14 +461,9 @@ final class WorkspaceModel: ObservableObject {
             return
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = ["-l", "-s", "127.0.0.1", "\(number):27183"]
-        let output = Pipe()
-        output.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
-        process.standardOutput = output; process.standardError = output
-        process.terminationHandler = { [weak self, weak process] proc in
-            output.fileHandleForReading.readabilityHandler = nil
+        let process = USBProxyProcess.make(executable: URL(fileURLWithPath: tool),
+            arguments: ["-l", "-s", "127.0.0.1", "\(number):27183"])
+        process.terminationHandler = { [weak self, weak process] _ in
             Task { @MainActor in
                 guard let self, let process, self.bridge === process else { return }
                 self.connectionStatus = "USB 桥接已退出，等待重新连接"
@@ -478,7 +473,6 @@ final class WorkspaceModel: ObservableObject {
         do {
             try process.run()
         } catch {
-            output.fileHandleForReading.readabilityHandler = nil
             if !isAutoRetry { showAlert(title: "USB 启动失败", message: error.localizedDescription, style: .error) }
             scheduleAutoReconnect(); return
         }

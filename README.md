@@ -6,15 +6,17 @@ SnapSend 是 macOS + iPhone 的课堂拍照工具：手机确认照片后通过 
 
 手机到电脑不需要个人热点、校园网或云端中转。上传 ChatGPT 时，电脑仍需要联网。
 
-> 当前为 **v0.5.0 预览版**。USB 和归档已在真机使用；自动投递依赖 ChatGPT 网页结构，最新版完整实发流程仍需持续验证。
+> 当前为 **v0.5.1 预览版**。USB 和归档已在真机使用；自动投递依赖 ChatGPT 网页结构，最新版完整实发流程仍需持续验证。
+
+> **0.5.0 已确认有断线后 CPU 忙循环问题，请更新 Mac 到 0.5.1。** 手机和传输协议不变，已有 iOS 0.5.0 可继续使用。修复证据见 [耗电故障记录](docs/ENERGY-EOF.zh-CN.md)。
 
 ## 下载
 
 | 下载 | 内容 |
 | --- | --- |
-| [Mac App · Apple Silicon ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.0/SnapSend-Mac-arm64.zip) | Release 版 SnapSend.app，含本机桥接与插件 |
-| **[Chrome 插件 · 独立 ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.0/SnapSend-Chrome-Extension.zip)** | 解压后在 Chrome 加载，无需下载整个源码 |
-| [iOS 自签源码 ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.0/SnapSend-iOS-Source.zip) | iPhone 工程及共享代码，用自己的账号签名 |
+| [Mac App · Apple Silicon ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.1/SnapSend-Mac-arm64.zip) | Release 版 SnapSend.app，含本机桥接与插件 |
+| **[Chrome 插件 · 独立 ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.1/SnapSend-Chrome-Extension.zip)** | 解压后在 Chrome 加载，无需下载整个源码 |
+| [iOS 自签源码 ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.1/SnapSend-iOS-Source.zip) | iPhone 工程及共享代码，用自己的账号签名 |
 | [所有版本与更新日志](https://github.com/Dos7t3r/SnapSend/releases) | 发布说明、下载文件和 SHA-256 校验清单 |
 
 独立入口：[浏览器插件下载与安装页](downloads/README.md)。目前未上架 Chrome Web Store 或 App Store；不提供作者个人开发证书签名的公共 IPA。
@@ -57,7 +59,7 @@ SnapSend 是 macOS + iPhone 的课堂拍照工具：手机确认照片后通过 
 ### Chrome 自动发送
 
 1. Mac AI 设置选择 Chrome，点击「安装浏览器桥接」。App 移动位置后需重新安装桥接。
-2. [下载独立插件 ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.0/SnapSend-Chrome-Extension.zip)，解压并保留整个文件夹。
+2. [下载独立插件 ZIP](https://github.com/Dos7t3r/SnapSend/releases/download/v0.5.1/SnapSend-Chrome-Extension.zip)，解压并保留整个文件夹。
 3. Chrome 打开 `chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选择含 `manifest.json` 的目录。
 4. 刷新 ChatGPT 页面，固定工具栏插件。打开本课专用的具体聊天，点插件并按面板提示绑定当前课堂与聊天。支持 `/c/<聊天>`、`/g/<项目或 GPT>/c/<聊天>`，项目首页不能绑定。
 5. 按 Mac 的提示词/自动发送设置开启投递。插件显示就绪后，手机拍照确认即可；聊天标签页保持打开，正常后台发送不抢焦点。
@@ -98,7 +100,7 @@ iOS 模拟器（按本机设备名替换 destination）：
 xcodebuild -project iOS/SnapSendPhone.xcodeproj -scheme GalleryTests -destination 'platform=iOS Simulator,name=iPhone 18 Pro Max' -derivedDataPath build/gallery-tests test CODE_SIGNING_ALLOWED=NO
 ```
 
-16 项核心、37 项浏览器、4 项 iOS 模拟器测试通过；Mac Release 构建通过，iPhone Release 在一台 iPhone 15 Pro Max 覆盖安装并成功启动。模拟测试不能替代真实 AI 发图验收。真实续航、长时间内存和最新版完整 USB→AI 连续发送仍待验证。
+18 项核心、37 项浏览器、4 项 iOS 模拟器测试通过；Mac Release 构建通过，iPhone Release 在一台 iPhone 15 Pro Max 覆盖安装并成功启动。模拟测试不能替代真实 AI 发图验收。真实续航、长时间内存和最新版完整 USB→AI 连续发送仍待验证。
 
 500 条照片记录的 100 次状态更新专项测试约从 0.47 秒降到 0.03 秒，只衡量元数据路径，不能推断整体耗电。详见 [资源优化记录](docs/PERFORMANCE-UX.zh-CN.md)。
 
@@ -106,7 +108,8 @@ xcodebuild -project iOS/SnapSendPhone.xcodeproj -scheme GalleryTests -destinatio
 
 - [CHANGELOG：版本日志](CHANGELOG.md)
 - [插件独立下载](downloads/README.md)
-- [发布校验与构建记录](docs/RELEASE-v0.5.0.zh-CN.md)
+- [v0.5.1 高耗电修复记录](docs/ENERGY-EOF.zh-CN.md)
+- [首次发布校验记录](docs/RELEASE-v0.5.0.zh-CN.md)
 - [架构](docs/ARCHITECTURE.zh-CN.md) · [性能与流程](docs/PERFORMANCE-UX.zh-CN.md)
 - [首次公开发布前的历史记录](docs/HISTORY.zh-CN.md)
 

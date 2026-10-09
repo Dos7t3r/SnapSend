@@ -148,7 +148,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testPhotoStageTrackingAndPersistence() throws {
-        XCTAssertEqual(SnapSendVersion, "0.5.0")
+        XCTAssertEqual(SnapSendVersion, "0.5.1")
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
         let library = try PhoneLibrary(directory: dir)
