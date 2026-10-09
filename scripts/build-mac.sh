@@ -25,8 +25,8 @@ cat > build/SnapSend.app/Contents/Info.plist <<'PLIST'
 <key>CFBundleExecutable</key><string>SnapSend</string>
 <key>CFBundleIconFile</key><string>SnapSend</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>9</string>
-<key>CFBundleShortVersionString</key><string>0.6.0</string>
+<key>CFBundleVersion</key><string>10</string>
+<key>CFBundleShortVersionString</key><string>0.6.2</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

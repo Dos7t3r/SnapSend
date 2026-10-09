@@ -35,7 +35,7 @@ import SnapSendCore
             }
             if state == "ai-waiting" { model.browserPageStatus = "等待：AI 正在回答" }
             if state == "failed" { model.browserPageStatus = "发送结果未确认，请打开聊天核对" }
-            let host = NSHostingView(rootView: WorkspaceView(model: model, page: state == "inbox" || state == "long-inbox" ? .inbox : state == "courses" || state == "long-courses" ? .courses : state == "settings" ? .settings : .overview, history: state == "long-history").environment(\.colorScheme, .dark).environment(\.auroraReduceMotion, state == "reduced-motion"))
+            let host = NSHostingView(rootView: WorkspaceView(model: model, page: state == "long-history" ? .tasks : state == "inbox" || state == "long-inbox" ? .inbox : state == "courses" || state == "long-courses" ? .courses : state == "settings" ? .settings : .overview, history: false).environment(\.colorScheme, .dark).environment(\.auroraReduceMotion, state == "reduced-motion"))
             let rect = NSRect(x: 0, y: 0, width: state.hasPrefix("long-") ? 960 : 1080, height: state.hasPrefix("long-") ? 640 : 720)
             let window = NSWindow(contentRect: rect, styleMask: [.borderless], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .darkAqua); window.contentView = host; host.frame = rect

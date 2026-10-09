@@ -1,6 +1,6 @@
 import Foundation
 
-public let SnapSendVersion = "0.6.0"
+public let SnapSendVersion = "0.6.2"
 
 /// 4-byte big-endian metadata length, JSON metadata, then binary image bytes.
 public struct WireHeader: Codable, Sendable {
@@ -15,6 +15,8 @@ public struct WireHeader: Codable, Sendable {
     public var message: String?
     public var sessionID: UUID?
     public var capturedAt: Date?
+    public var capabilities: [String]?
+    public var deliveryIntent: String?
     public var sendToAI: Bool? // nil preserves compatibility with older phones
     public init(kind: String, id: UUID = UUID(), byteCount: Int = 0, sha256: String = "") {
         version = 2; self.kind = kind; self.id = id; self.byteCount = byteCount; self.sha256 = sha256

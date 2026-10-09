@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import AppKit
 import SnapSendCore
 
 struct StatusNode: View {
@@ -43,7 +42,7 @@ struct PipelineView: View {
         VStack(alignment: .leading, spacing: Aurora.Space.gap) {
             HStack { Text("照片的旅程").font(Aurora.TypeStyle.heading).lineLimit(1); Spacer(); Text(model.usbConnected ? "USB 本地传输" : "插线即可接收 · 无需开课").font(Aurora.TypeStyle.caption).foregroundStyle(Aurora.Colors.secondary) }
             HStack(spacing: Aurora.Space.small) {
-                StatusNode(symbol: "iphone", title: "iPhone", detail: model.usbConnected ? "已连接" : "连接与解锁", color: Aurora.Colors.phone, ready: model.usbConnected, actionTitle: "连接 iPhone") { model.connect(); configure() }
+                StatusNode(symbol: model.usbMode == "pad" ? "ipad" : "iphone", title: model.usbMode == "pad" ? "iPad" : "iPhone", detail: model.usbConnected ? "已连接" : "连接与解锁", color: Aurora.Colors.phone, ready: model.usbConnected, actionTitle: model.usbMode == "pad" ? "连接 iPad" : "连接 iPhone") { model.connect(); configure() }
                 link(ready: model.usbConnected)
                 StatusNode(symbol: "desktopcomputer", title: "Mac", detail: "原图本地保存", color: Aurora.Colors.blue, ready: true, actionTitle: "查看归档") { model.showArchive() }
                 link(ready: model.deliveryTarget == "native" ? model.chatMatchesClass : model.browserConnected)
@@ -106,6 +105,8 @@ struct PhotoRow: View {
     var photo: PhotoRecord
     var open: () -> Void
     @Environment(\.auroraReduceMotion) private var reduceMotion
+    @State private var deleting = false
+    @State private var cancelling = false
     private var state: DeliveryState? { model.stageOf(photo) }
     private var color: Color { state == .sent ? Aurora.Colors.success : [.failed, .uncertain].contains(state) ? Aurora.Colors.error : Aurora.Colors.queued }
     var body: some View {
@@ -119,7 +120,7 @@ struct PhotoRow: View {
                         Text(model.catalog.section(for: photo.sessionID)?.name ?? "收件箱").font(Aurora.TypeStyle.micro).foregroundStyle(Aurora.Colors.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 4)
-                    Label(state == .sent ? "已发送" : state == .failed ? "失败" : state == .uncertain ? "待核对" : [.preparing, .submitting].contains(state) ? "发送中" : "待发送", systemImage: state == .sent ? "checkmark.circle.fill" : [.failed, .uncertain].contains(state) ? "exclamationmark.circle.fill" : "clock")
+                    Label(state == .sent ? "已发送" : state == .failed ? "失败" : state == .uncertain ? "待核对" : [.preparing, .submitting].contains(state) ? "发送中" : state == .queued ? "待发送" : "仅保存", systemImage: state == .sent ? "checkmark.circle.fill" : [.failed, .uncertain].contains(state) ? "exclamationmark.circle.fill" : "clock")
                         .font(Aurora.TypeStyle.caption).foregroundStyle(color).lineLimit(1).contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                 }.padding(.horizontal, Aurora.Space.small).frame(height: Aurora.Space.row)
             }
@@ -127,8 +128,19 @@ struct PhotoRow: View {
                 Button(state == .uncertain ? "核对" : state == .failed ? "重发" : "发送") { if state == .uncertain { model.selected = photo.id; open() } else { model.sendSinglePhotoToAI(photo) } }
                     .buttonStyle(PressableStyle(inset: Aurora.Space.tiny)).font(Aurora.TypeStyle.caption)
             }
+            Menu {
+                if [.queued,.failed,.uncertain].contains(state) { Button("取消发送任务，保留原图") { cancelling = true } }
+                Button("导出原图") { model.selectedPhotoIDs = [photo.id]; model.batchExportSelected() }
+                Button("删除 Mac 原图",role:.destructive) { deleting = true }
+            } label: { Image(systemName:"ellipsis").menuHitArea() }.menuStyle(.borderlessButton).fixedSize().handPointer()
         }.animation(reduceMotion ? Aurora.Motion.fade : Aurora.Motion.state, value: state)
             .animatedRows(state)
+            .confirmationDialog("删除 Mac 原图？",isPresented:$deleting) {
+                Button("删除原图",role:.destructive) { model.selectedPhotoIDs = [photo.id]; model.batchDeleteSelected() }
+            } message: { Text("删除 Mac 本地副本；不删除手机、iPad 来源 App 或 AI 聊天中的图片。") }
+            .confirmationDialog("取消发送任务？",isPresented:$cancelling) {
+                Button("取消任务，保留原图") { model.cancelDelivery(photo) }
+            } message: { Text("不再发送这张图片；已到 AI 的消息不会撤回。聊天中若仍有附件，请先处理。") }
     }
 }
 struct SectionRow: View {

@@ -26,13 +26,13 @@
   };
   function ready(inspect = false, releaseStaged = false) {
     const input = editor();
-    if (!input) return {ok:false,error:'未识别到聊天输入框（支持旧版和项目新版布局）。请等页面加载完成；若输入框已经显示，请确认扩展已更新至 0.5.0'};
+    if (!input) return {ok:false,error:'未识别到聊天输入框（支持旧版和项目新版布局）。请等页面加载完成；若输入框已经显示，请确认扩展已更新至 0.6.2'};
     if (!form()) return {ok:false,error:'已找到输入框，但没有识别到附件操作区，请更新扩展后重试'};
     if ((input.innerText || input.value || '').trim()) return {ok:false,error:'等待：输入框有你的草稿，请先发送或清空'};
     const generating = stopped();
     if (generating) {
       if (!generationSince) generationSince = Date.now();
-      return {ok:false,reason:'generating',canStop:true,error:Date.now() - generationSince >= 90000 ? 'AI 回答已超过 90 秒。可停止当前回答后继续发送，不必刷新页面' : '等待：AI 正在回答；结束后会自动继续，也可停止当前回答'};
+      return {ok:false,reason:'generating',canStop:true,error:Date.now() - generationSince >= 90000 ? '等待：AI 回答已超过 90 秒。可停止当前回答后继续发送，不必刷新页面' : '等待：AI 正在回答；结束后会自动继续，也可停止当前回答'};
     }
     generationSince = 0;
     // Mac explicitly confirms there is no active attempt or unresolved receipt. Never remove an attachment.
@@ -58,7 +58,7 @@
     throw new Error('网页尚未确认停止，已保留队列，请到聊天检查停止按钮');
   }
   async function attach(job) {
-    const check = ready(); if (!check.ok) return check;
+    const check = ready(); if (!check.ok) return {...check,deferred:true};
     const input = editor(), scope = form();
     const oldImages = scope.querySelectorAll('img').length;
     const oldRemoves = [...scope.querySelectorAll('button')].filter(b => /remove|移除|删除附件/i.test(b.getAttribute('aria-label') || '')).length;

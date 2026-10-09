@@ -190,3 +190,28 @@ test('manual selected-photo dispatch does not masquerade as continuous auto-send
   await s.bind();const v=(await s.message({kind:'status'})).view;
   assert.equal(v.title,'仅发送手动选中的图片');assert.equal(v.checks.find(c=>c.label==='自动发送').ok,false);
 });
+
+test('draft raced after lease requeues without uncertainty and resumes next check',async()=>{
+ let deferred=true;
+ const s=setup({native:r=>r.kind==='status'?{ok:true,version:6,auto:true,matching:true,queued:1}:null,content:m=>m.kind==='attach'&&deferred?{ok:false,deferred:true,error:'等待：有草稿'}:{ok:true}});
+ await s.bind();await s.tick();
+ assert.equal(s.requests.some(r=>r.kind==='defer'),true);
+ assert.equal(s.requests.some(r=>r.kind==='result'&&r.state==='uncertain'),false);
+ assert.equal(s.sent.includes('submit'),false);
+ deferred=false;s.advance(7000);await s.tick();
+ assert.equal(s.requests.some(r=>r.kind==='result'&&r.state==='sent'),true);
+});
+
+test('popup distinguishes resume of authorized pending tasks from enabling only new photos',async()=>{
+  const s=setup({auto:false,native:r=>r.kind==='status'?{ok:true,version:6,lesson:'Math',usb:true,matching:true,auto:false,queued:0,pendingQueued:2}:null});
+  await s.bind();
+  assert.equal((await s.message({kind:'status'})).view.action,'resume');
+  assert.equal((await s.message({kind:'resume'})).ok,true);
+  assert.equal(s.requests.some(r=>r.kind==='resume'),true);
+  s.tab.url='https://chatgpt.com/c/other';
+  const count=s.requests.filter(r=>r.kind==='resume').length;
+  assert.equal((await s.message({kind:'resume'})).ok,false);
+  assert.equal(s.requests.filter(r=>r.kind==='resume').length,count);
+  const old=setup({auto:false});await old.bind();
+  assert.equal((await old.message({kind:'status'})).view.action,'enable');
+});

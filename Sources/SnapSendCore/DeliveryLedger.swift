@@ -53,6 +53,12 @@ public final class DeliveryLedger {
         let copy = entries.filter { !ids.contains($0.id) }
         try commit(copy)
     }
+    public func cancel(ids: Set<UUID>) throws {
+        guard ids.isSubset(of:Set(entries.map(\.id))), !entries.contains(where: { ids.contains($0.id) && ![.queued,.failed,.uncertain].contains($0.state) }) else { throw LedgerError.invalidTransition }
+        var copy = entries
+        for i in copy.indices where ids.contains(copy[i].id) { copy[i].state = .held; copy[i].detail = "发送任务已取消，原图保留" }
+        try commit(copy)
+    }
     public func holdQueued() throws {
         var copy = entries
         for i in copy.indices where copy[i].state == .queued { copy[i].state = .held; copy[i].detail = "仅保存，不自动发送" }
@@ -73,8 +79,8 @@ public final class DeliveryLedger {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { throw LedgerError.unknown }
         let old = entries[i].state
         let allowed: [DeliveryState: [DeliveryState]] = [
-            .held: [.queued], .queued: [.preparing, .held], .preparing: [.submitting, .failed, .uncertain],
-            .submitting: [.sent, .uncertain], .failed: [.queued], .uncertain: [.queued, .sent], .sent: []
+            .held: [.queued], .queued: [.preparing, .held], .preparing: [.queued, .submitting, .failed, .uncertain],
+            .submitting: [.sent, .uncertain], .failed: [.queued, .held], .uncertain: [.queued, .sent, .held], .sent: []
         ]
         guard allowed[old, default: []].contains(state) else { throw LedgerError.invalidTransition }
         var copy = entries; copy[i].state = state; copy[i].detail = String(detail.prefix(500)); try commit(copy)

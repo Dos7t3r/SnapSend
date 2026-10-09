@@ -8,6 +8,8 @@ public struct SharedImage: Codable, Identifiable, Sendable {
     public let byteCount: Int
     public let sha256: String
     public let createdAt: Date
+    public var deliveryIntent: String?
+    public var sessionID: UUID?
 }
 
 public enum ShareFile {
@@ -61,7 +63,7 @@ public final class ShareInbox {
         let info = try ShareFile.inspect(source)
         guard items.reduce(0, { $0 + $1.byteCount }) + info.count <= 100 * 1024 * 1024 else { throw ShareFile.Failure.budget }
         let id = UUID(), name = "\(UUID().uuidString).\(info.suffix)"
-        let item = SharedImage(id: id, filename: name, byteCount: info.count, sha256: info.hash, createdAt: Date())
+        let item = SharedImage(id: id, filename: name, byteCount: info.count, sha256: info.hash, createdAt: Date(), deliveryIntent: nil, sessionID: nil)
         let target = directory.appendingPathComponent(name)
         try FileManager.default.copyItem(at: source, to: target)
         do {
@@ -70,6 +72,12 @@ public final class ShareInbox {
             let next = items + [item]; try JSONEncoder().encode(next).write(to: manifest, options: .atomic); items = next
         } catch { try? FileManager.default.removeItem(at: target); throw error }
         return item
+    }
+    public func setPlan(ids: Set<UUID>, session: UUID?, sendToAI: Bool) throws {
+        guard ids.isSubset(of:Set(items.map(\.id))), !sendToAI || session != nil else { throw ShareFile.Failure.changed }
+        var next = items
+        for i in next.indices where ids.contains(next[i].id) { next[i].deliveryIntent = sendToAI ? "explicitShare" : "archiveOnly"; next[i].sessionID = session }
+        try JSONEncoder().encode(next).write(to:manifest,options:.atomic); items = next
     }
     public func url(_ item: SharedImage) -> URL { directory.appendingPathComponent(item.filename) }
     public func remove(_ id: UUID) throws {

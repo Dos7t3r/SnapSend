@@ -74,6 +74,54 @@ import SnapSendCore
         check(restored.browserCommand(["kind":"restore","section":section.uuidString,"url":"https://chatgpt.com/c/wrong","tab":9])["ok"] as? Bool == false)
         check(restored.browserCommand(["kind":"restore","section":section.uuidString,"url":url,"tab":9])["ok"] as? Bool == true)
         check(restored.browserCommand(["kind":"status","url":url,"tab":9])["matching"] as? Bool == true)
+        // A late draft never attached a photo: safely defer and retry the same UUID.
+        restored.enableDelivery()
+        try restored.receive(bytes)
+        let recoverable = restored.records.last!
+        check(restored.browserCommand(["kind":"poll","url":url,"tab":9])["id"] as? String == recoverable.id.uuidString)
+        restored.refreshBrowserPresence(now:Date().addingTimeInterval(60))
+        check(restored.autoSend) // Bounded upload lease outlives the 45-second idle heartbeat.
+        check(restored.browserCommand(["kind":"defer","url":url,"tab":9,"id":recoverable.id.uuidString,"detail":"等待：有草稿"])["ok"] as? Bool == true)
+        check(restored.stageOf(recoverable) == .queued && restored.autoSend)
+        check(restored.browserCommand(["kind":"poll","url":url,"tab":9])["id"] as? String == recoverable.id.uuidString)
+        _ = restored.browserCommand(["kind":"result","url":url,"tab":9,"id":recoverable.id.uuidString,"state":"uncertain"])
+        restored.selected = recoverable.id
+        restored.resolveCurrent(sent:false)
+        restored.resumeDelivery()
+        check(restored.autoSend && restored.stageOf(recoverable) == .queued)
+        restored.cancelDelivery(recoverable)
+        check(restored.stageOf(recoverable) == .held && restored.imageURL(recoverable) != nil)
+        check(restored.browserCommand(["kind":"poll","url":url,"tab":9])["id"] == nil)
+        // Explicit iPad consent authorizes one batch without enabling continuous intake.
+        restored.pauseDelivery()
+        var share = WireHeader(kind:"photo",byteCount:bytes.count,sha256:model.records[0].sha256)
+        share.deliveryIntent = "explicitShare"; share.sendToAI = true; share.sessionID = restored.catalog.activeLessonID
+        try restored.receive(bytes,header:share)
+        let shared = restored.records.first { $0.id == share.id }!
+        check(restored.stageOf(shared) == .queued && !restored.autoSend)
+        restored.cancelDelivery(shared)
+        try restored.receive(bytes,header:share) // Lost receipt retry cannot undo cancellation.
+        check(restored.stageOf(shared) == .held)
+        var wrong = WireHeader(kind:"photo",byteCount:bytes.count,sha256:share.sha256)
+        wrong.deliveryIntent = "explicitShare"; wrong.sendToAI = true; wrong.sessionID = UUID()
+        try restored.receive(bytes,header:wrong)
+        check(restored.stageOf(restored.records.first { $0.id == wrong.id }!) == .held)
+        var valid = WireHeader(kind:"photo",byteCount:bytes.count,sha256:share.sha256)
+        valid.deliveryIntent = "explicitShare"; valid.sendToAI = true; valid.sessionID = restored.catalog.activeLessonID
+        try restored.receive(bytes,header:valid)
+        check(restored.browserCommand(["kind":"poll","url":url,"tab":9])["id"] as? String == valid.id.uuidString)
+        // Deleting a different saved photo is allowed while an upload is active.
+        restored.selectedPhotoIDs = [shared.id]
+        check(restored.batchDeleteSelected())
+        check(restored.records.first { $0.id == shared.id } == nil)
+        restored.selectedPhotoIDs = [valid.id]
+        check(!restored.batchDeleteSelected())
+        check(restored.records.contains { $0.id == valid.id })
+        _ = restored.browserCommand(["kind":"defer","url":url,"tab":9,"id":valid.id.uuidString,"detail":"等待：草稿"])
+        restored.pauseDelivery()
+        check(restored.browserCommand(["kind":"status","url":url,"tab":9])["pendingQueued"] as? Int == 1)
+        check(restored.browserCommand(["kind":"resume","url":url,"tab":9])["ok"] as? Bool == true)
+        check(restored.stageOf(restored.records.first { $0.id == wrong.id }!) == .held)
         print("PASS: no-course USB receipt → Inbox → Section assignment → browser lease/result → duplicate retry → persisted binding")
     }
 }
