@@ -136,4 +136,74 @@ final class PhotoZoomTests: XCTestCase {
         }
     }
 
+    @MainActor func testCaptureFiveStatesAtDeviceSize() async throws {
+        let url = try fixture(); defer { try? FileManager.default.removeItem(at: url) }
+        let lesson = SnapSendPhone.Lesson(id: UUID(), courseID: UUID(), title: "课堂", startedAt: Date(), timeZoneID: TimeZone.current.identifier)
+        let context = SnapSendPhone.LessonContext(lesson: lesson, courseName: "MAT232", sectionName: "LEC0101")
+        let small = min(UIScreen.main.bounds.width, UIScreen.main.bounds.height) < 400
+        for size in [small ? CGSize(width: 375, height: 667) : CGSize(width: 440, height: 956)] {
+            for state in ["connected", "offline", "no-target", "denied", "preparing"] {
+                let model = PhoneModel(preview: true)
+                model.connected = state != "offline"
+                model.peerName = "MacBook Air · 一个非常非常长的电脑名字"
+                model.activeContext = state == "no-target" ? nil : context
+                model.photos = [SnapSendPhone.PhonePhoto(id: UUID(), url: url, createdAt: Date(), receivedByMac: true, context: context, stage: "sent")]
+                let camera = CameraCapture(); camera.configurePreview(presets: [0.5, 1, 2, 3])
+                let cameraState: CameraCapture.State = state == "denied" ? .denied : state == "preparing" ? .preparing : .unavailable
+                var frames: [String: CGRect] = [:]
+                let root = PhoneView(model: model, cameraOverride: cameraState, camera: camera, layoutObserver: { frames = $0 })
+                let host = PortraitCaptureHost(rootView: root)
+                let window = UIApplication.shared.connectedScenes.first.flatMap { $0 as? UIWindowScene }.map { UIWindow(windowScene: $0) } ?? UIWindow()
+                window.rootViewController = host; window.makeKeyAndVisible()
+                host.setNeedsUpdateOfSupportedInterfaceOrientations()
+                window.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { error in print("Portrait scene update: \(error)") }
+                try await Task.sleep(for: .milliseconds(600))
+                host.view.frame = window.bounds
+                print("Device window: \(window.bounds), safe=\(window.safeAreaInsets), orientation=\(window.windowScene?.interfaceOrientation.rawValue ?? -1)")
+                defer { window.isHidden = true; window.rootViewController = nil }
+                try await Task.sleep(for: .milliseconds(900)); host.view.layoutIfNeeded()
+                let debugImage = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
+                try debugImage.pngData()?.write(to: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Capture-\(Int(size.width))-\(state).png"))
+                let shutter = try XCTUnwrap(frames["shutter"], "shutter")
+                let dock = try XCTUnwrap(frames["dock"])
+                let preview = try XCTUnwrap(frames["preview"])
+                let controls = try XCTUnwrap(frames["controls"])
+                let thumbnail = try XCTUnwrap(frames["thumbnail"])
+                let top = try XCTUnwrap(frames["top"])
+                XCTAssertEqual(host.view.bounds.width, size.width, accuracy: 0.1)
+                XCTAssertEqual(shutter.midX, host.view.bounds.midX, accuracy: 0.01, "Shutter must be at screen center")
+                XCTAssertEqual(shutter.width, 76, accuracy: 0.1)
+                XCTAssertEqual(dock.height, 88, accuracy: 0.1)
+                XCTAssertEqual(preview.height / preview.width, 4.0 / 3.0, accuracy: 0.001, "Portrait full sensor ratio")
+                XCTAssertLessThanOrEqual(top.maxY + 12, preview.minY + 0.1)
+                XCTAssertLessThanOrEqual(preview.maxY + 12, controls.minY + 0.1)
+                XCTAssertLessThanOrEqual(controls.maxY, dock.minY)
+                XCTAssertEqual(thumbnail.width, 56, accuracy: 0.1)
+                for key in ["connection", "flash-button", "quality-button", "album-button", "settings-button", "zoom-0.5", "zoom-1.0", "zoom-2.0", "zoom-3.0"] {
+                    let frame = try XCTUnwrap(frames[key], key)
+                    XCTAssertGreaterThanOrEqual(frame.width, 44 - 0.1, key)
+                    XCTAssertGreaterThanOrEqual(frame.height, 44 - 0.1, key)
+                    XCTAssertGreaterThanOrEqual(frame.minX, 0, key)
+                    XCTAssertLessThanOrEqual(frame.maxX, size.width, key)
+                }
+                let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+                let attachment = XCTAttachment(image: image); attachment.name = "Capture polish \(Int(size.width))x\(Int(size.height)) \(state)"; attachment.lifetime = .keepAlways; add(attachment)
+                print("Capture metrics \(size) \(state): center error=\(shutter.midX - host.view.bounds.midX), preview=\(preview), controls=\(controls), dock=\(dock)")
+                window.isHidden = true
+            }
+        }
+    }
+    func testChineseDateDoesNotFollowEnglishSystemLocale() {
+        let date = Date(timeIntervalSince1970: 0)
+        XCTAssertTrue(SnapTheme.date(date).contains("月"))
+        XCTAssertTrue(SnapTheme.date(date).contains("日"))
+        XCTAssertFalse(SnapTheme.date(date).contains("AM"))
+        XCTAssertFalse(SnapTheme.date(date).contains("PM"))
+    }
+
+}
+
+private final class PortraitCaptureHost<Content: View>: UIHostingController<Content> {
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .portrait }
 }

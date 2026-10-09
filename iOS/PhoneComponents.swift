@@ -34,21 +34,33 @@ struct PhotoGallerySelection: Identifiable {
 }
 struct DeliveryRing: View {
     var photo: PhonePhoto?
+    var thumbnail = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var completed = false
+    @State private var completionTask: Task<Void, Never>?
     @State private var shake = false
     private var sent: Bool { photo?.stage == "sent" }
     var body: some View {
         ZStack {
             ForEach(0..<3) { i in
                 let end = Double(i + 1) / 3 - SnapTheme.Layout.ringGap
-                Circle().trim(from: Double(i) / 3 + SnapTheme.Layout.ringGap, to: end)
-                    .stroke(color(i), style: StrokeStyle(lineWidth: SnapTheme.Layout.ringLine, lineCap: .round)).rotationEffect(.degrees(SnapTheme.Motion.ringStart))
+                RoundedRectangle(cornerRadius: thumbnail ? 20 : SnapTheme.Layout.ring / 2).trim(from: Double(i) / 3 + (sent ? 0 : SnapTheme.Layout.ringGap), to: sent ? Double(i + 1) / 3 : end)
+                    .stroke(color(i), style: StrokeStyle(lineWidth: SnapTheme.Layout.ringLine, lineCap: .round))
             }
-        }.frame(width: SnapTheme.Layout.ring, height: SnapTheme.Layout.ring)
+        }.frame(width: thumbnail ? 67 : SnapTheme.Layout.ring, height: thumbnail ? 67 : SnapTheme.Layout.ring)
             .scaleEffect(completed && !reduceMotion ? SnapTheme.Motion.arrival : 1)
-            .animation(reduceMotion ? .easeOut : SnapTheme.Motion.state, value: photo?.stage)
-            .task(id: sent) { guard sent, !reduceMotion else { return }; withAnimation(SnapTheme.Motion.state) { completed = true }; try? await Task.sleep(for: .seconds(SnapTheme.Motion.flight)); withAnimation(SnapTheme.Motion.state) { completed = false } }
+            .animation(reduceMotion ? .easeOut : SnapTheme.Motion.state, value: photo?.stage).animation(reduceMotion ? SnapTheme.Motion.fade : SnapTheme.Motion.state, value: photo?.macSaved).animation(reduceMotion ? SnapTheme.Motion.fade : SnapTheme.Motion.state, value: photo?.id)
+            .onChange(of: sent) { _, value in
+                completionTask?.cancel(); completed = false
+                guard value, !reduceMotion else { return }
+                completionTask = Task {
+                    withAnimation(SnapTheme.Motion.state) { completed = true }
+                    do { try await Task.sleep(for: .seconds(SnapTheme.Motion.flight)) } catch { return }
+                    withAnimation(SnapTheme.Motion.state) { completed = false }
+                }
+            }
+            .onChange(of: photo?.id) { _, _ in completionTask?.cancel(); completed = false; shake = false }
+            .onDisappear { completionTask?.cancel() }
             .offset(x: shake ? SnapTheme.Layout.tiny : 0)
             .task(id: photo?.stage) {
                 guard photo?.deliveryFailed == true, !reduceMotion else { return }
@@ -58,7 +70,7 @@ struct DeliveryRing: View {
     }
     private func color(_ index: Int) -> Color {
         if sent { return SnapTheme.success }
-        if index == 2, photo?.deliveryFailed == true { return SnapTheme.failure }
+        if photo?.deliveryFailed == true, index == (photo?.macSaved == true ? 2 : 1) { return SnapTheme.failure }
         if index == 0, photo != nil { return SnapTheme.local }
         if index == 1, photo?.macSaved == true { return SnapTheme.blue }
         return SnapTheme.waiting.opacity(SnapTheme.Alpha.dim)
@@ -66,13 +78,14 @@ struct DeliveryRing: View {
 }
 struct PhoneConnectionPill: View {
     @ObservedObject var model: PhoneModel
+    var compact = false
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Label(model.connected ? "已连接 \(model.peerName.isEmpty ? "Mac" : model.peerName)" : "等待 USB 连接", systemImage: model.connected ? "circle.fill" : "circle")
-                .font(SnapTheme.TypeStyle.micro).lineLimit(1).foregroundStyle(model.connected ? SnapTheme.success : SnapTheme.local)
-                .padding(SnapTheme.Layout.small).frame(minHeight: SnapTheme.Layout.touch)
-        }.buttonStyle(.plain).modifier(SnapGlass()).animation(SnapTheme.Motion.state, value: model.connected)
+            Label(model.connected ? "已连接 · \(model.peerName.isEmpty ? "Mac" : model.peerName)" : "等待连接", systemImage: model.connected ? "circle.fill" : "circle")
+                .font(SnapTheme.TypeStyle.micro).lineLimit(1).foregroundStyle(model.connected ? SnapTheme.success : SnapTheme.waiting)
+                .padding(.horizontal, 8).frame(height: compact ? 36 : 44).frame(maxWidth: .infinity, alignment: .leading).modifier(SnapGlass())
+        }.buttonStyle(SnapTouchStyle()).animation(SnapTheme.Motion.state, value: model.connected)
     }
 }
 struct PhoneChain: View {
@@ -103,6 +116,7 @@ struct PhoneChain: View {
     }
 }
 struct PairingDigits: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let code: String
     let expires: Date
     var complete = false
@@ -119,7 +133,7 @@ struct PairingDigits: View {
                 ZStack { Circle().stroke(SnapTheme.waiting.opacity(SnapTheme.Alpha.active), lineWidth: SnapTheme.Layout.ringLine); Circle().trim(from: 0, to: remaining / 60).stroke(SnapTheme.blue, style: StrokeStyle(lineWidth: SnapTheme.Layout.ringLine, lineCap: .round)).rotationEffect(.degrees(SnapTheme.Motion.ringStart)); Text("\(Int(ceil(remaining)))秒").font(SnapTheme.TypeStyle.caption.monospacedDigit()) }.frame(width: SnapTheme.Layout.shutter, height: SnapTheme.Layout.shutter)
             }
             Text("在 Mac 输入这 6 位码\n配对成功后，下次自动连接").font(SnapTheme.TypeStyle.body).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        }.padding(SnapTheme.Layout.page).scaleEffect(complete ? SnapTheme.Motion.arrival : 1).animation(SnapTheme.Motion.state, value: complete)
+        }.padding(SnapTheme.Layout.page).scaleEffect(complete && !reduceMotion ? SnapTheme.Motion.arrival : 1).animation(reduceMotion ? SnapTheme.Motion.fade : SnapTheme.Motion.state, value: complete)
     }
 }
 struct LessonPhotoViewer: View {
@@ -155,7 +169,7 @@ struct LessonPhotoViewer: View {
                     }.padding(SnapTheme.Layout.card).modifier(SnapGlass())
                 }.padding(SnapTheme.Layout.page).transition(.opacity)
             }
-        }.preferredColorScheme(.dark).tint(.white).toolbar(.hidden, for: .navigationBar)
+        }.buttonStyle(SnapTouchStyle()).animation(SnapTheme.Motion.state, value: currentID).preferredColorScheme(.dark).tint(.white).toolbar(.hidden, for: .navigationBar)
     }
 }
 
